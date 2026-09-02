@@ -297,7 +297,7 @@ export function UrlListsPage() {
                         )}
                         <button
                           onClick={() => deleteItem(item.id)}
-                          className="p-1.5 rounded-lg hover:bg-error-500/20 text-dark-600 hover:text-error-400 transition-colors shrink-0 opacity-0 group-hover:opacity-100 transition-opacity"
+                          className="p-1.5 rounded-lg hover:bg-error-500/20 text-dark-600 hover:text-error-400 transition-all shrink-0 opacity-0 group-hover:opacity-100"
                         >
                           <Trash2 className="w-3.5 h-3.5" />
                         </button>
