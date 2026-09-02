@@ -90,7 +90,7 @@ export function GroupsPage() {
     setScanning(true);
     setScanError('');
     try {
-      await callBackend(`/api/groups/${selectedGroup}/scan`);
+      await callBackend(`/api/telegram/groups/${selectedGroup}/scan`);
     } catch (err) {
       setScanError(err instanceof Error ? err.message : 'Scan failed.');
     }
