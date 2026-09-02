@@ -6,6 +6,10 @@ export interface TelegramSettings {
   session_string: string | null;
   connected: boolean;
   last_connected_at: string | null;
+  account_first_name: string | null;
+  account_last_name: string | null;
+  account_username: string | null;
+  account_user_id: string | null;
   created_at: string;
   updated_at: string;
 }

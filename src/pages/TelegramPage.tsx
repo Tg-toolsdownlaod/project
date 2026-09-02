@@ -11,6 +11,9 @@ import {
   Info,
   Zap,
   Shield,
+  User,
+  Hash,
+  AtSign,
 } from 'lucide-react';
 import { supabase } from '@/lib/supabase';
 import type { TelegramSettings } from '@/lib/types';
@@ -61,7 +64,10 @@ export function TelegramPage() {
       } else {
         setSettings({
           id: '', api_id: '', api_hash: '', phone: '', session_string: '',
-          connected: false, last_connected_at: null, created_at: '', updated_at: '',
+          connected: false, last_connected_at: null,
+          account_first_name: null, account_last_name: null,
+          account_username: null, account_user_id: null,
+          created_at: '', updated_at: '',
         });
       }
       setLoading(false);
@@ -176,7 +182,11 @@ export function TelegramPage() {
             <div>
               <h2 className="text-base font-bold text-white">Telegram Userbot</h2>
               <p className="text-xs text-dark-500">
-                {connected ? `Connected as ${settings?.phone || 'user'}` : 'Not connected — set up your userbot credentials'}
+                {connected
+                  ? (settings?.account_username
+                      ? `@${settings.account_username}`
+                      : settings?.account_first_name || settings?.phone || 'user')
+                  : 'Not connected — set up your userbot credentials'}
               </p>
             </div>
           </div>
@@ -333,15 +343,45 @@ export function TelegramPage() {
           <h3 className="text-sm font-semibold text-white mb-4 flex items-center gap-2">
             <Shield className="w-4 h-4 text-success-400" /> Session Info
           </h3>
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            <div className="bg-dark-800/40 rounded-lg p-3">
-              <p className="text-xs text-dark-500 mb-1">Session Status</p>
-              <p className="text-sm text-success-400 font-medium flex items-center gap-2">
-                <CheckCircle2 className="w-4 h-4" /> Active & Encrypted
+
+          {/* Account identity banner */}
+          <div className="flex items-center gap-4 p-4 rounded-lg bg-gradient-to-br from-success-500/10 to-dark-900 border border-success-500/20 mb-4">
+            <div className="w-12 h-12 rounded-full bg-gradient-to-br from-primary-500 to-accent-500 flex items-center justify-center shrink-0">
+              <User className="w-6 h-6 text-white" />
+            </div>
+            <div className="min-w-0 flex-1">
+              <p className="text-sm font-bold text-white truncate">
+                {[settings?.account_first_name, settings?.account_last_name].filter(Boolean).join(' ') || 'Telegram User'}
               </p>
+              <div className="flex items-center gap-3 mt-1 flex-wrap">
+                {settings?.account_username && (
+                  <span className="text-xs text-accent-400 flex items-center gap-1">
+                    <AtSign className="w-3 h-3" /> {settings.account_username}
+                  </span>
+                )}
+                {settings?.account_user_id && (
+                  <span className="text-xs text-dark-500 flex items-center gap-1 font-mono">
+                    <Hash className="w-3 h-3" /> {settings.account_user_id}
+                  </span>
+                )}
+              </div>
+            </div>
+            <span className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-success-500/15 text-success-400 text-xs font-medium shrink-0">
+              <CheckCircle2 className="w-3.5 h-3.5" /> Active
+            </span>
+          </div>
+
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+            <div className="bg-dark-800/40 rounded-lg p-3">
+              <p className="text-xs text-dark-500 mb-1 flex items-center gap-1.5"><Phone className="w-3 h-3" /> Phone</p>
+              <p className="text-sm text-white font-medium font-mono">{settings?.phone || '—'}</p>
             </div>
             <div className="bg-dark-800/40 rounded-lg p-3">
-              <p className="text-xs text-dark-500 mb-1">Last Connected</p>
+              <p className="text-xs text-dark-500 mb-1 flex items-center gap-1.5"><User className="w-3 h-3" /> Account ID</p>
+              <p className="text-sm text-white font-medium font-mono">{settings?.account_user_id || '—'}</p>
+            </div>
+            <div className="bg-dark-800/40 rounded-lg p-3">
+              <p className="text-xs text-dark-500 mb-1 flex items-center gap-1.5"><Shield className="w-3 h-3" /> Last Connected</p>
               <p className="text-sm text-white font-medium">{formatTimeAgo(settings?.last_connected_at ?? null)}</p>
             </div>
           </div>

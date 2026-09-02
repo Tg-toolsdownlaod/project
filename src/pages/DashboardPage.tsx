@@ -9,9 +9,12 @@ import {
   Zap,
   Clock,
   Film,
+  Send,
+  User,
+  AtSign,
 } from 'lucide-react';
 import { supabase } from '@/lib/supabase';
-import type { Download, Episode, Group } from '@/lib/types';
+import type { Download, Episode, Group, TelegramSettings } from '@/lib/types';
 import { formatBytes, formatSpeed, formatTimeAgo, getStatusColor } from '@/lib/utils';
 
 interface Stats {
@@ -36,16 +39,18 @@ export function DashboardPage() {
   });
   const [recentDownloads, setRecentDownloads] = useState<(Download & { episode?: Episode })[]>([]);
   const [activeGroups, setActiveGroups] = useState<(Group & { topic_count?: number })[]>([]);
+  const [tgSettings, setTgSettings] = useState<TelegramSettings | null>(null);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
     (async () => {
-      const [dlRes, epRes, groupRes, recentRes, groupsRes] = await Promise.all([
+      const [dlRes, epRes, groupRes, recentRes, groupsRes, tgRes] = await Promise.all([
         supabase.from('downloads').select('*'),
         supabase.from('episodes').select('*'),
         supabase.from('groups').select('*', { count: 'exact' }),
         supabase.from('downloads').select('*, episode:episodes(*)').order('created_at', { ascending: false }).limit(8),
         supabase.from('groups').select('*').eq('active', true).order('updated_at', { ascending: false }).limit(5),
+        supabase.from('telegram_settings').select('*').maybeSingle(),
       ]);
 
       const downloads = dlRes.data as Download[] || [];
@@ -63,6 +68,7 @@ export function DashboardPage() {
 
       setRecentDownloads((recentRes.data as (Download & { episode?: Episode })[]) || []);
       setActiveGroups((groupsRes.data as (Group & { topic_count?: number })[]) || []);
+      setTgSettings((tgRes.data as TelegramSettings) || null);
       setLoading(false);
     })();
   }, []);
@@ -114,6 +120,65 @@ export function DashboardPage() {
             </div>
           );
         })}
+      </div>
+
+      {/* Userbot + System Status Bar */}
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+        <div className={`rounded-xl border p-4 flex items-center gap-3 ${
+          tgSettings?.connected
+            ? 'border-success-500/30 bg-gradient-to-br from-success-500/10 to-dark-900'
+            : 'border-dark-800 bg-dark-900/60'
+        }`}>
+          <div className={`w-10 h-10 rounded-lg flex items-center justify-center shrink-0 ${tgSettings?.connected ? 'bg-success-500/20' : 'bg-dark-800'}`}>
+            <Send className={`w-5 h-5 ${tgSettings?.connected ? 'text-success-400' : 'text-dark-500'}`} />
+          </div>
+          <div className="min-w-0">
+            <p className="text-xs text-dark-500">Userbot</p>
+            <p className="text-sm font-bold text-white truncate">
+              {tgSettings?.connected
+                ? (tgSettings.account_username
+                    ? '@' + tgSettings.account_username
+                    : [tgSettings.account_first_name, tgSettings.account_last_name].filter(Boolean).join(' ') || tgSettings.phone || 'Connected')
+                : 'Offline'}
+            </p>
+          </div>
+        </div>
+
+        <div className="rounded-xl border border-dark-800 bg-dark-900/60 p-4 flex items-center gap-3">
+          <div className="w-10 h-10 rounded-lg bg-primary-500/20 flex items-center justify-center shrink-0">
+            <User className="w-5 h-5 text-primary-400" />
+          </div>
+          <div className="min-w-0">
+            <p className="text-xs text-dark-500">Account ID</p>
+            <p className="text-sm font-bold text-white font-mono truncate">
+              {tgSettings?.account_user_id || (tgSettings?.phone || '—')}
+            </p>
+          </div>
+        </div>
+
+        <div className="rounded-xl border border-dark-800 bg-dark-900/60 p-4 flex items-center gap-3">
+          <div className="w-10 h-10 rounded-lg bg-accent-500/20 flex items-center justify-center shrink-0">
+            <AtSign className="w-5 h-5 text-accent-400" />
+          </div>
+          <div className="min-w-0">
+            <p className="text-xs text-dark-500">Username</p>
+            <p className="text-sm font-bold text-white truncate">
+              {tgSettings?.account_username ? '@' + tgSettings.account_username : '—'}
+            </p>
+          </div>
+        </div>
+
+        <div className="rounded-xl border border-dark-800 bg-dark-900/60 p-4 flex items-center gap-3">
+          <div className="w-10 h-10 rounded-lg bg-warning-500/20 flex items-center justify-center shrink-0">
+            <Clock className="w-5 h-5 text-warning-400" />
+          </div>
+          <div className="min-w-0">
+            <p className="text-xs text-dark-500">Last Connected</p>
+            <p className="text-sm font-bold text-white truncate">
+              {tgSettings?.connected ? formatTimeAgo(tgSettings.last_connected_at) : '—'}
+            </p>
+          </div>
+        </div>
       </div>
 
       {/* Storage + Episodes overview */}
