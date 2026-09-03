@@ -12,10 +12,12 @@ import {
   Play,
   Hash,
   X,
+  Copy,
+  Layers,
 } from 'lucide-react';
 import { supabase } from '@/lib/supabase';
-import { backendConfigured, startForwardJob } from '@/lib/backend';
-import type { ForwardJob, ForwardTarget, Group, Topic } from '@/lib/types';
+import { backendConfigured, cancelMirror, prepareMirror, startForwardJob } from '@/lib/backend';
+import type { ForwardJob, ForwardTarget, Group, GroupMirror, Topic } from '@/lib/types';
 import { formatTimeAgo } from '@/lib/utils';
 
 type JobWithSource = ForwardJob & { group?: Group | null; topic?: Topic | null };
@@ -31,21 +33,27 @@ const STATUS_STYLES: Record<ForwardJob['status'], string> = {
 export function ForwardsPage() {
   const [jobs, setJobs] = useState<JobWithSource[]>([]);
   const [targets, setTargets] = useState<ForwardTarget[]>([]);
+  const [mirrors, setMirrors] = useState<(GroupMirror & { group?: Group | null })[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [busyId, setBusyId] = useState<string | null>(null);
 
   const load = useCallback(async () => {
-    const [jRes, tRes] = await Promise.all([
+    const [jRes, tRes, mRes] = await Promise.all([
       supabase
         .from('forward_jobs')
         .select('*, group:groups(*), topic:topics(*)')
         .order('created_at', { ascending: false }),
       supabase.from('forward_targets').select('*').order('last_used_at', { ascending: false, nullsFirst: false }),
+      supabase
+        .from('group_mirrors')
+        .select('*, group:groups(*)')
+        .order('created_at', { ascending: false }),
     ]);
     if (jRes.error) setError(jRes.error.message);
     setJobs((jRes.data as JobWithSource[]) || []);
     setTargets((tRes.data as ForwardTarget[]) || []);
+    setMirrors((mRes.data as (GroupMirror & { group?: Group | null })[]) || []);
     setLoading(false);
   }, []);
 
@@ -66,6 +74,29 @@ export function ForwardsPage() {
       }
     }
     setBusyId(null);
+    load();
+  };
+
+  const resumeMirror = async (mirror: GroupMirror) => {
+    setBusyId(mirror.id);
+    setError('');
+    if (backendConfigured) {
+      try {
+        await prepareMirror(mirror.id);
+      } catch (err) {
+        setError(err instanceof Error ? err.message : 'The userbot could not be reached.');
+      }
+    }
+    setBusyId(null);
+    load();
+  };
+
+  const stopMirror = async (mirror: GroupMirror) => {
+    if (!window.confirm('Stop this mirror? Videos already copied stay in the new group.')) return;
+    if (backendConfigured) {
+      await cancelMirror(mirror.id).catch(() => {});
+    }
+    await supabase.from('group_mirrors').update({ status: 'cancelled', auto_follow: false }).eq('id', mirror.id);
     load();
   };
 
@@ -129,6 +160,123 @@ export function ForwardsPage() {
           </p>
         )}
       </div>
+
+      {/* Mirrors — a mirror owns many jobs, so it gets its own rolled-up card */}
+      {mirrors.length > 0 && (
+        <section className="space-y-3">
+          <h3 className="flex items-center gap-2 text-sm font-semibold text-white">
+            <Copy className="h-4 w-4 text-primary-400" /> Group mirrors
+            <span className="text-xs font-normal text-dark-500">{mirrors.length}</span>
+          </h3>
+          <div className="grid grid-cols-1 gap-3 xl:grid-cols-2">
+            {mirrors.map((mirror) => {
+              const own = jobs.filter((j) => j.mirror_id === mirror.id);
+              const forwarded = own.reduce((sum, j) => sum + (j.forwarded_count || 0), 0);
+              const failed = own.reduce((sum, j) => sum + (j.failed_count || 0), 0);
+              const total = own.reduce((sum, j) => sum + (j.total_count || 0), 0) || mirror.total_videos;
+              const pct = total > 0 ? Math.min((forwarded / total) * 100, 100) : 0;
+              const active = mirror.status === 'running' || mirror.status === 'preparing';
+
+              return (
+                <div key={mirror.id} className="rounded-2xl border border-primary-500/20 bg-dark-900/60 p-4">
+                  <div className="flex items-start gap-3">
+                    <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-primary-500/15">
+                      <Copy className="h-4 w-4 text-primary-400" />
+                    </div>
+                    <div className="min-w-0 flex-1">
+                      <div className="flex flex-wrap items-center gap-2">
+                        <p className="truncate text-sm font-semibold text-white">
+                          {mirror.group?.title || 'Unknown group'}
+                        </p>
+                        <ChevronRight className="h-3 w-3 text-dark-600" />
+                        <p className="truncate text-sm text-accent-400">
+                          {mirror.target_title || mirror.target_chat_id}
+                        </p>
+                      </div>
+                      <div className="mt-1 flex flex-wrap items-center gap-2 text-[10px]">
+                        <span className={`rounded-full px-1.5 py-0.5 font-medium ${
+                          active
+                            ? 'bg-primary-500/10 text-primary-400'
+                            : mirror.status === 'completed'
+                            ? 'bg-success-500/10 text-success-400'
+                            : mirror.status === 'failed'
+                            ? 'bg-error-500/10 text-error-400'
+                            : 'bg-dark-700 text-dark-400'
+                        }`}>
+                          {mirror.status}
+                        </span>
+                        <span className="flex items-center gap-1 text-dark-500">
+                          <Layers className="h-2.5 w-2.5" /> {own.length || mirror.total_topics} topics
+                        </span>
+                        {mirror.copy_mode !== 'forward' && (
+                          <span className="rounded-full bg-warning-500/10 px-1.5 py-0.5 font-medium text-warning-400">
+                            {mirror.copy_mode === 'reupload' ? 're-upload' : 'auto copy'}
+                          </span>
+                        )}
+                        {mirror.auto_follow && (
+                          <span className="flex items-center gap-1 rounded-full bg-primary-500/10 px-1.5 py-0.5 font-medium text-primary-400">
+                            <Repeat className="h-2.5 w-2.5" /> in sync
+                          </span>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="mt-3 h-1.5 w-full overflow-hidden rounded-full bg-dark-800">
+                    <div
+                      className="h-full rounded-full bg-gradient-to-r from-primary-500 to-accent-500 transition-all"
+                      style={{ width: `${pct}%` }}
+                    />
+                  </div>
+                  <div className="mt-1.5 flex items-center justify-between text-[10px] text-dark-500">
+                    <span className="flex items-center gap-2">
+                      <span className="flex items-center gap-1 text-success-400">
+                        <CheckCircle2 className="h-3 w-3" /> {forwarded}
+                      </span>
+                      {failed > 0 && (
+                        <span className="flex items-center gap-1 text-error-400">
+                          <XCircle className="h-3 w-3" /> {failed}
+                        </span>
+                      )}
+                      <span>of {total}</span>
+                    </span>
+                    <span>{formatTimeAgo(mirror.prepared_at || mirror.created_at)}</span>
+                  </div>
+
+                  {mirror.error && (
+                    <p className="mt-2 rounded-lg bg-error-500/10 px-2.5 py-1.5 text-[11px] text-error-300">
+                      {mirror.error}
+                    </p>
+                  )}
+
+                  <div className="mt-3 flex items-center gap-2 border-t border-dark-800 pt-3">
+                    <button
+                      onClick={() => resumeMirror(mirror)}
+                      disabled={busyId === mirror.id}
+                      className="flex items-center gap-1.5 rounded-lg bg-dark-800 px-3 py-1.5 text-[11px] font-medium text-dark-300 transition-colors hover:bg-primary-500 hover:text-white disabled:opacity-50"
+                    >
+                      {busyId === mirror.id ? (
+                        <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                      ) : (
+                        <RefreshCw className="h-3.5 w-3.5" />
+                      )}
+                      Sync now
+                    </button>
+                    {mirror.status !== 'cancelled' && (
+                      <button
+                        onClick={() => stopMirror(mirror)}
+                        className="flex items-center gap-1.5 rounded-lg bg-dark-800 px-3 py-1.5 text-[11px] font-medium text-dark-300 transition-colors hover:bg-error-500 hover:text-white"
+                      >
+                        <X className="h-3.5 w-3.5" /> Stop
+                      </button>
+                    )}
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        </section>
+      )}
 
       {/* Jobs */}
       {jobs.length === 0 ? (

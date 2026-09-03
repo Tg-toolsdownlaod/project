@@ -154,6 +154,34 @@ so the worker keeps relaying newly scanned videos to the same destination.
 ### `POST /api/telegram/forward/{job_id}/cancel`
 Cancels the job and turns off `auto_follow`.
 
+### `POST /api/telegram/mirror/{mirror_id}/prepare`
+`mirror_id` is a `group_mirrors.id`. Creates a matching topic in the
+destination for every source topic that holds videos (remembered in
+`mirror_topic_map`, so a re-run reuses them), then queues one forward job per
+topic. Returns immediately — creating topics and queueing thousands of videos
+takes a while — and reports through `group_mirrors.status`.
+
+Safe to call again: it tops up existing jobs with videos found by a later
+scan, which is how "keep the branch in sync" works.
+
+```json
+{ "success": true, "status": "preparing" }
+```
+
+### `POST /api/telegram/mirror/{mirror_id}/cancel`
+Cancels the mirror and every queued or running job it spawned. Videos already
+copied stay in the destination.
+
+#### How a copy is made
+
+`forward_jobs.copy_mode` (inherited from the mirror) decides:
+
+| Mode | What happens |
+| --- | --- |
+| `forward` | A real forward, or a by-reference re-send into a topic. Copied server-side: no bytes pass through the service. |
+| `reupload` | The video is downloaded and uploaded again as a new file. Slow and uses bandwidth, but it is the only thing that works against a group with content protection. |
+| `auto` | Forward first; re-upload only when Telegram refuses (`CHAT_FORWARDS_RESTRICTED` and friends). The default. |
+
 ---
 
 ## Storage

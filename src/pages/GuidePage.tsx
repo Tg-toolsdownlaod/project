@@ -2,6 +2,7 @@ import { useState } from 'react';
 import {
   AlertTriangle,
   Cloud,
+  Copy,
   Download,
   ExternalLink,
   Send,
@@ -98,10 +99,22 @@ const STEPS: Step[] = [
     goTo: { page: 'automation', label: { en: 'Open Automation', km: 'បើកស្វ័យប្រវត្តិកម្ម' } },
   },
   {
+    icon: <Copy className="h-4 w-4" />,
+    title: {
+      en: '7. Branch a whole group into a new one',
+      km: '៧. បើកសាខាក្រុមទាំងមូលទៅក្រុមថ្មី',
+    },
+    body: {
+      en: 'Open a group and press "Mirror to new group". It creates a matching topic in the destination for every topic that holds videos, then copies each video in episode order. If the source group has content protection on — common for paid groups — Telegram blocks forwarding entirely, and the Automatic copy mode downloads and re-uploads each video instead. That is much slower, so leave the service running.',
+      km: 'បើកក្រុមមួយ រួចចុច "Mirror to new group"។ វានឹងបង្កើត topic ដូចគ្នាក្នុងក្រុមថ្មីសម្រាប់រាល់ topic ដែលមានវីដេអូ រួចចម្លងវីដេអូតាមលំដាប់ episode។ បើក្រុមប្រភពបើក content protection (ធម្មតាសម្រាប់ក្រុមបង់ប្រាក់) Telegram ហាមការ forward ទាំងស្រុង ហើយរបៀប Automatic នឹងទាញយករួច upload ជាថ្មីជំនួស។ វិធីនោះយឺតជាងច្រើន ដូច្នេះត្រូវទុកសេវាដំណើរការ។',
+    },
+    goTo: { page: 'groups', label: { en: 'Open Groups', km: 'បើកក្រុម' } },
+  },
+  {
     icon: <Zap className="h-4 w-4" />,
     title: {
-      en: '7. Let it run by itself',
-      km: '៧. ទុកឲ្យវាដំណើរការឯង',
+      en: '8. Let it run by itself',
+      km: '៨. ទុកឲ្យវាដំណើរការឯង',
     },
     body: {
       en: 'An auto-download rule watches a group or topic for a range of episodes and queues them as they appear. Give the rule a forward group ID and each new episode is relayed there too.',
@@ -140,6 +153,16 @@ const FAQ: { q: { en: string; km: string }; a: { en: string; km: string } }[] = 
     a: {
       en: 'Two common causes: the source group has content protection on (forwarding is blocked by Telegram itself), or the account is not a member of the destination group. Forward jobs show the exact error per video.',
       km: 'មូលហេតុទូទៅពីរ៖ ក្រុមប្រភពបើក content protection (Telegram ខ្លួនឯងហាមបញ្ជូនបន្ត) ឬគណនីមិនទាន់ចូលរួមក្រុមទិសដៅ។ ការបញ្ជូនបន្តបង្ហាញ error ជាក់លាក់សម្រាប់វីដេអូនីមួយៗ។',
+    },
+  },
+  {
+    q: {
+      en: 'The VIP group blocks forwarding',
+      km: 'ក្រុម VIP ហាមការ forward',
+    },
+    a: {
+      en: 'That is Telegram\'s content protection, set by the group owner — no tool can forward out of such a group. The way around it is the "Re-upload every video" copy mode: each video is downloaded and sent as a new file. It works, but it moves every byte through your connection, so a large group takes a long time.',
+      km: 'នោះជា content protection របស់ Telegram ដែលម្ចាស់ក្រុមកំណត់ — គ្មានឧបករណ៍ណា forward ចេញពីក្រុមបែបនេះបានទេ។ ផ្លូវចេញគឺរបៀប "Re-upload every video"៖ វីដេអូនីមួយៗត្រូវទាញយករួចផ្ញើជាឯកសារថ្មី។ វាដំណើរការ តែទិន្នន័យទាំងអស់ត្រូវឆ្លងកាត់អ៊ីនធឺណិតរបស់អ្នក ដូច្នេះក្រុមធំត្រូវការពេលយូរ។',
     },
   },
   {

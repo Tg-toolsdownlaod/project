@@ -1,6 +1,7 @@
 import { useState } from 'react';
 
 import { Header } from '@/components/Header';
+import { SetupNotice } from '@/components/SetupNotice';
 import { Sidebar } from '@/components/Sidebar';
 import { AutomationPage } from '@/pages/AutomationPage';
 import { DashboardPage } from '@/pages/DashboardPage';
@@ -10,6 +11,7 @@ import { GuidePage } from '@/pages/GuidePage';
 import { SettingsPage } from '@/pages/SettingsPage';
 import { UrlListsPage } from '@/pages/UrlListsPage';
 import { useLanguage } from '@/lib/i18n';
+import { supabaseConfigured } from '@/lib/supabase';
 import type { PageKey } from '@/lib/types';
 
 function App() {
@@ -28,6 +30,10 @@ function App() {
   };
 
   const info = PAGE_INFO[currentPage];
+
+  // Every page reads from the database, so without credentials the app can
+  // only explain itself.
+  if (!supabaseConfigured) return <SetupNotice />;
 
   const renderPage = () => {
     switch (currentPage) {

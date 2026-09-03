@@ -11,6 +11,7 @@ import { config } from "./config.js";
 import { db, nowIso, upsertSingle } from "./db.js";
 import { applyAutoRules, retryFailed, runDownload } from "./downloader.js";
 import * as forwarder from "./forwarder.js";
+import * as mirror from "./mirror.js";
 import * as r2 from "./r2.js";
 import { scanGroup } from "./scanner.js";
 import * as telegram from "./telegram.js";
@@ -195,6 +196,34 @@ app.post(
       .from("forward_jobs")
       .update({ status: "cancelled", auto_follow: false })
       .eq("id", req.params.jobId);
+    res.json({ success: true });
+  })
+);
+
+app.post(
+  "/api/telegram/mirror/:mirrorId/prepare",
+  requireApiKey,
+  route(async (req, res) => {
+    // Creating topics and queueing thousands of videos takes a while, so this
+    // answers immediately and reports through group_mirrors.status.
+    spawn(mirror.prepare(req.params.mirrorId), `mirror ${req.params.mirrorId}`);
+    res.json({ success: true, status: "preparing" });
+  })
+);
+
+app.post(
+  "/api/telegram/mirror/:mirrorId/cancel",
+  requireApiKey,
+  route(async (req, res) => {
+    await db()
+      .from("forward_jobs")
+      .update({ status: "cancelled", auto_follow: false })
+      .eq("mirror_id", req.params.mirrorId)
+      .in("status", ["queued", "running"]);
+    await db()
+      .from("group_mirrors")
+      .update({ status: "cancelled", auto_follow: false })
+      .eq("id", req.params.mirrorId);
     res.json({ success: true });
   })
 );

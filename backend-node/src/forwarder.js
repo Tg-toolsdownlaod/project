@@ -1,10 +1,33 @@
 /** Runs forward jobs: copies videos from a source topic into another group. */
+import fs from "node:fs/promises";
+import path from "node:path";
+
+import { config } from "./config.js";
 import { db, nowIso, rows } from "./db.js";
+import { safeFilename } from "./downloader.js";
 import { getClient, normalizeChatId } from "./telegram.js";
 
 // Telegram rate limits forwards hard; this pause keeps a long job alive.
 const PAUSE_BETWEEN_MESSAGES = 1500;
 const running = new Set();
+
+/**
+ * Errors that mean "Telegram will not copy this message by reference".
+ * A group with content protection turned on (common for paid/VIP groups)
+ * answers every forward with one of these, and no amount of retrying helps —
+ * the only way to copy the video is to download it and upload it again.
+ */
+const COPY_REFUSED = [
+  "CHAT_FORWARDS_RESTRICTED",
+  "CHAT_SEND_MEDIA_FORBIDDEN",
+  "MEDIA_EMPTY",
+  "FILE_REFERENCE_",
+];
+
+const isCopyRefused = (err) => {
+  const text = String(err?.errorMessage ?? err?.message ?? "");
+  return COPY_REFUSED.some((code) => text.includes(code));
+};
 
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
@@ -33,6 +56,7 @@ async function execute(jobId) {
     const client = await getClient();
     const target = await client.getEntity(normalizeChatId(job.target_chat_id));
     const targetTopic = job.target_topic_id ? Number(job.target_topic_id) : null;
+    const copyMode = job.copy_mode || "auto";
 
     let sourceEntity = null;
     if (job.source_group_id) {
@@ -53,7 +77,16 @@ async function execute(jobId) {
       }
 
       try {
-        await forwardOne(client, sourceEntity, target, targetTopic, Number(episode.message_id), item.id);
+        await copyOne({
+          client,
+          sourceEntity,
+          target,
+          targetTopic,
+          messageId: Number(episode.message_id),
+          itemId: item.id,
+          episode,
+          copyMode,
+        });
         forwarded += 1;
       } catch (err) {
         // One bad message must not kill the job.
@@ -93,18 +126,47 @@ async function execute(jobId) {
   }
 }
 
-/** Forwards one message, falling back to a re-send when forwarding is blocked. */
-async function forwardOne(client, sourceEntity, target, targetTopic, messageId, itemId) {
+/**
+ * Copies one message into the destination.
+ *
+ * Three modes:
+ *   forward  — a real forward, or a by-reference re-send when the destination
+ *              is a topic (Telegram's forward call cannot target one). Either
+ *              way the file is copied server-side: no bytes move through here.
+ *   reupload — download the video and upload it as a brand new file. The only
+ *              thing that works against a content-protected group, and the
+ *              slow, bandwidth-hungry option.
+ *   auto     — forward, and re-upload only when Telegram refuses.
+ */
+async function copyOne({ client, sourceEntity, target, targetTopic, messageId, itemId, episode, copyMode }) {
+  if (copyMode === "reupload") {
+    const sentId = await reuploadOne({ client, sourceEntity, target, targetTopic, messageId, episode });
+    await mark(itemId, "forwarded", sentId);
+    return;
+  }
+
+  try {
+    const sentId = await forwardOne({ client, sourceEntity, target, targetTopic, messageId });
+    await mark(itemId, "forwarded", sentId);
+  } catch (err) {
+    if (copyMode !== "auto" || !isCopyRefused(err)) throw err;
+    // Telegram will not copy this by reference; fetch the bytes instead.
+    const sentId = await reuploadOne({ client, sourceEntity, target, targetTopic, messageId, episode });
+    await mark(itemId, "forwarded", sentId);
+  }
+}
+
+/** A server-side copy: the file never passes through this process. */
+async function forwardOne({ client, sourceEntity, target, targetTopic, messageId }) {
   let sent;
 
   if (targetTopic === null && sourceEntity) {
     sent = await client.forwardMessages(target, { messages: [messageId], fromPeer: sourceEntity });
   } else {
-    // Forum topics (and forward-restricted chats) need a fresh send. The file
-    // reference is reused, so nothing is downloaded or uploaded again.
-    const message = await client.getMessages(sourceEntity, { ids: messageId });
-    const found = Array.isArray(message) ? message[0] : message;
-    if (!found?.media) throw new Error("The source message no longer has media.");
+    // Forum topics need a fresh send, because Telegram's forward call cannot
+    // target a topic. The file reference is reused, so nothing is downloaded
+    // or uploaded again -- but the message loses its "forwarded from" header.
+    const found = await fetchMessage(client, sourceEntity, messageId);
     sent = await client.sendFile(target, {
       file: found.media,
       caption: found.message || "",
@@ -113,7 +175,42 @@ async function forwardOne(client, sourceEntity, target, targetTopic, messageId, 
   }
 
   const first = Array.isArray(sent) ? sent[0] : sent;
-  await mark(itemId, "forwarded", first?.id ? String(first.id) : null);
+  return first?.id ? String(first.id) : null;
+}
+
+/**
+ * Downloads the video and sends it as a new file. Used for groups that block
+ * forwarding. The temp file is always removed, including on failure.
+ */
+async function reuploadOne({ client, sourceEntity, target, targetTopic, messageId, episode }) {
+  const found = await fetchMessage(client, sourceEntity, messageId);
+  await fs.mkdir(config.downloadDir, { recursive: true });
+  const localPath = path.join(
+    config.downloadDir,
+    `fwd-${messageId}-${safeFilename(episode?.file_name || "video.mp4")}`
+  );
+
+  try {
+    await client.downloadMedia(found, { outputFile: localPath });
+    const sent = await client.sendFile(target, {
+      file: localPath,
+      caption: found.message || "",
+      replyTo: targetTopic ?? undefined,
+      supportsStreaming: true,
+      forceDocument: false,
+    });
+    const first = Array.isArray(sent) ? sent[0] : sent;
+    return first?.id ? String(first.id) : null;
+  } finally {
+    await fs.rm(localPath, { force: true }).catch(() => {});
+  }
+}
+
+async function fetchMessage(client, sourceEntity, messageId) {
+  const message = await client.getMessages(sourceEntity, { ids: messageId });
+  const found = Array.isArray(message) ? message[0] : message;
+  if (!found?.media) throw new Error("The source message no longer has media.");
+  return found;
 }
 
 /**

@@ -110,3 +110,13 @@ export function joinChat(invite: string) {
 export function notifySelf(text: string) {
   return callBackend('/api/telegram/notify', { text });
 }
+
+/** Asks the service to create the destination topics and queue every job. */
+export function prepareMirror(mirrorId: string) {
+  return callBackend(`/api/telegram/mirror/${mirrorId}/prepare`);
+}
+
+/** Stops a mirror and every job it spawned. */
+export function cancelMirror(mirrorId: string) {
+  return callBackend(`/api/telegram/mirror/${mirrorId}/cancel`);
+}

@@ -153,6 +153,34 @@ export interface ForwardTarget {
   updated_at: string;
 }
 
+export type CopyMode = 'auto' | 'forward' | 'reupload';
+
+export interface GroupMirror {
+  id: string;
+  source_group_id: string;
+  target_chat_id: string;
+  target_title: string | null;
+  create_topics: boolean;
+  copy_mode: CopyMode;
+  auto_follow: boolean;
+  status: 'draft' | 'preparing' | 'running' | 'completed' | 'failed' | 'cancelled';
+  total_topics: number;
+  total_videos: number;
+  error: string | null;
+  prepared_at: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface MirrorTopicMap {
+  id: string;
+  mirror_id: string;
+  source_topic_id: string | null;
+  target_topic_id: string | null;
+  title: string;
+  created_at: string;
+}
+
 export interface ForwardJob {
   id: string;
   source_group_id: string | null;
@@ -160,6 +188,8 @@ export interface ForwardJob {
   target_chat_id: string;
   target_title: string | null;
   target_topic_id: string | null;
+  mirror_id: string | null;
+  copy_mode: CopyMode;
   mode: 'selected' | 'topic';
   status: 'queued' | 'running' | 'completed' | 'failed' | 'cancelled';
   total_count: number;

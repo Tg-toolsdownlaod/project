@@ -3,6 +3,7 @@ import { db, rows } from "./db.js";
 import { config } from "./config.js";
 import { applyAutoRules, processQueue } from "./downloader.js";
 import * as forwarder from "./forwarder.js";
+import * as mirror from "./mirror.js";
 import { isAuthorized } from "./telegram.js";
 
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
@@ -31,7 +32,7 @@ async function onePass() {
   if (added) console.log(`Auto-follow added ${added} video(s) to forward jobs`);
 
   const pending = rows(
-    await db().from("forward_jobs").select("id").eq("status", "queued").limit(3)
+    await db().from("forward_jobs").select("id, mirror_id").eq("status", "queued").limit(3)
   );
   for (const job of pending) {
     try {
@@ -39,5 +40,6 @@ async function onePass() {
     } catch (err) {
       console.error(`Forward job ${job.id} failed:`, err?.message ?? err);
     }
+    if (job.mirror_id) await mirror.refreshStatus(job.mirror_id).catch(() => {});
   }
 }

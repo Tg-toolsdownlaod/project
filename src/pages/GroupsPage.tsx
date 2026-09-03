@@ -20,6 +20,7 @@ import {
   AlertTriangle,
   X,
   HardDrive,
+  Copy as CopyIcon,
 } from 'lucide-react';
 import { supabase } from '@/lib/supabase';
 import { backendConfigured, callBackend } from '@/lib/backend';
@@ -27,6 +28,7 @@ import type { Episode, Group, Topic } from '@/lib/types';
 import { formatBytes, formatTimeAgo, getStatusColor } from '@/lib/utils';
 import { AddGroupModal, type NewGroupInput } from '@/components/AddGroupModal';
 import { ForwardModal } from '@/components/ForwardModal';
+import { MirrorModal } from '@/components/MirrorModal';
 
 /** The synthetic topic id used for videos that sit outside any forum topic. */
 const NO_TOPIC = '__none__';
@@ -49,6 +51,7 @@ export function GroupsPage() {
 
   const [showAddModal, setShowAddModal] = useState(false);
   const [forwardRequest, setForwardRequest] = useState<ForwardRequest | null>(null);
+  const [mirroring, setMirroring] = useState(false);
   const [loading, setLoading] = useState(true);
   const [scanning, setScanning] = useState(false);
   const [error, setError] = useState('');
@@ -269,6 +272,7 @@ export function GroupsPage() {
           onScan={() => handleScan(selectedGroup.id)}
           onBack={backToGroups}
           onOpenTopic={openTopic}
+          onMirror={() => setMirroring(true)}
           onDownloadTopic={(eps) => queueDownloads(eps)}
           onForwardTopic={(topic, eps) =>
             setForwardRequest({ group: selectedGroup, topic, episodes: eps, mode: 'topic' })
@@ -308,6 +312,19 @@ export function GroupsPage() {
       )}
 
       {showAddModal && <AddGroupModal onClose={() => setShowAddModal(false)} onAdd={handleAddGroup} />}
+      {mirroring && selectedGroup && (
+        <MirrorModal
+          group={selectedGroup}
+          topics={groupTopics}
+          episodes={episodesOf(selectedGroup.id, null)}
+          onClose={() => setMirroring(false)}
+          onDone={(message) => {
+            setMirroring(false);
+            setToast(message);
+            loadData();
+          }}
+        />
+      )}
       {forwardRequest && (
         <ForwardModal
           group={forwardRequest.group}
@@ -495,7 +512,7 @@ function Stat({ icon, label, value }: { icon: React.ReactNode; label: string; va
   );
 }
 
-function GroupDetail({ group, topics, episodesOf, scanning, onScan, onBack, onOpenTopic, onDownloadTopic, onForwardTopic }: {
+function GroupDetail({ group, topics, episodesOf, scanning, onScan, onBack, onOpenTopic, onMirror, onDownloadTopic, onForwardTopic }: {
   group: Group;
   topics: Topic[];
   episodesOf: (groupId: string, topicId: string | null) => Episode[];
@@ -503,6 +520,7 @@ function GroupDetail({ group, topics, episodesOf, scanning, onScan, onBack, onOp
   onScan: () => void;
   onBack: () => void;
   onOpenTopic: (topicId: string) => void;
+  onMirror: () => void;
   onDownloadTopic: (episodes: Episode[]) => void;
   onForwardTopic: (topic: Topic | null, episodes: Episode[]) => void;
 }) {
@@ -537,13 +555,23 @@ function GroupDetail({ group, topics, episodesOf, scanning, onScan, onBack, onOp
                 <span className="text-[10px] text-dark-500">Last scan {formatTimeAgo(group.last_scanned_at)}</span>
               </div>
             </div>
-            <button
-              onClick={onScan}
-              disabled={scanning}
-              className="flex items-center gap-2 rounded-lg bg-primary-500 px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-primary-600 disabled:opacity-50"
-            >
-              {scanning ? <Loader2 className="h-4 w-4 animate-spin" /> : <RefreshCw className="h-4 w-4" />} Scan group
-            </button>
+            <div className="flex flex-wrap items-center gap-2">
+              <button
+                onClick={onScan}
+                disabled={scanning}
+                className="flex items-center gap-2 rounded-lg bg-primary-500 px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-primary-600 disabled:opacity-50"
+              >
+                {scanning ? <Loader2 className="h-4 w-4 animate-spin" /> : <RefreshCw className="h-4 w-4" />} Scan group
+              </button>
+              <button
+                onClick={onMirror}
+                disabled={allEpisodes.length === 0}
+                title="Copy every topic and video into a new group"
+                className="flex items-center gap-2 rounded-lg bg-dark-800 px-4 py-2 text-sm font-medium text-dark-300 transition-colors hover:bg-accent-500 hover:text-white disabled:opacity-40"
+              >
+                <CopyIcon className="h-4 w-4" /> Mirror to new group
+              </button>
+            </div>
           </div>
 
           <div className="mt-4 grid grid-cols-2 gap-3 sm:grid-cols-4">
