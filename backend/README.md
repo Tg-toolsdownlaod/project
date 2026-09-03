@@ -7,6 +7,11 @@ Cloudflare R2, and forwards videos from one group into another.
 The frontend reaches it through `VITE_TELEGRAM_BACKEND_URL`, sending every
 request as a POST with an `x-api-key` header.
 
+A Node.js implementation of the same API lives in
+[`../backend-node`](../backend-node). If you already have Node installed for
+the frontend, that one is simpler to set up — no Python toolchain. Run one or
+the other, never both against the same Telegram account.
+
 ```
 app/
   main.py             FastAPI routes (the API the frontend calls)

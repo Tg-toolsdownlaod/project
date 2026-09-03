@@ -13,7 +13,11 @@ contains `success: false`. The error shown to the user comes from `error`:
 { "success": false, "error": "Could not connect to this group." }
 ```
 
-The reference implementation lives in [`../backend`](../backend).
+Two reference implementations exist — run one, not both:
+
+- [`../backend-node`](../backend-node) — Node.js + teleproto (recommended if
+  you already have Node for the frontend)
+- [`../backend`](../backend) — Python + Telethon
 
 ---
 
