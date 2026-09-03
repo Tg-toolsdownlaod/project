@@ -1,6 +1,7 @@
 """Works the download queue: Telegram -> local disk -> R2."""
 import asyncio
 import os
+import re
 import time
 from datetime import datetime, timezone
 from typing import Any, Optional
@@ -11,6 +12,16 @@ from .db import db, download_settings
 from .telegram_client import get_client, normalize_chat_id
 
 _running: set[str] = set()
+
+
+# Windows rejects these in a filename; Telegram captions are full of them.
+_ILLEGAL_IN_FILENAME = re.compile(r'[<>:"/\\|?*\x00-\x1f]')
+
+
+def safe_filename(name: str) -> str:
+    """Makes a Telegram filename safe to write on any OS."""
+    cleaned = _ILLEGAL_IN_FILENAME.sub("_", name or "").strip(" .")
+    return (cleaned or "video.mp4")[:120]
 
 
 def _now() -> str:
@@ -76,7 +87,10 @@ async def run_download(download_id: str) -> None:
             return
 
         os.makedirs(settings.download_dir, exist_ok=True)
-        local_path = os.path.join(settings.download_dir, f"{download_id}-{episode.get('file_name') or 'video.mp4'}")
+        local_path = os.path.join(
+            settings.download_dir,
+            f"{download_id}-{safe_filename(episode.get('file_name') or 'video.mp4')}",
+        )
 
         last_report = 0.0
 

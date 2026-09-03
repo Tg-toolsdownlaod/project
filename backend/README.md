@@ -44,6 +44,40 @@ Telethon depends on pyaes, which publishes only an sdist with a legacy
 `setup.py`, and setuptools 78 removed `setup.py install`. Installing
 `setuptools<78` first (as the Dockerfile does) fixes it.
 
+### Windows
+
+Everything runs on Windows; only the shell differs. In PowerShell:
+
+```powershell
+cd backend
+copy .env.example .env       # then edit it in Notepad
+python -m venv .venv
+.venv\Scripts\pip install "setuptools<78" wheel
+.venv\Scripts\pip install -r requirements.txt
+.venv\Scripts\python login.py      # sign in once
+.\start.bat                         # or: .venv\Scripts\python -m uvicorn app.main:app --port 8000
+```
+
+Set `DOWNLOAD_DIR` to a real path with room for the videos, e.g.
+`DOWNLOAD_DIR=D:\tg-downloads`. Files are deleted right after they reach R2,
+but a big download needs the space while it runs.
+
+**The deployed frontend cannot call `http://localhost`.** A page served over
+HTTPS (Vercel) is not allowed by the browser to call a plain-HTTP address, so
+pointing `VITE_TELEGRAM_BACKEND_URL` at your PC only works if the frontend is
+also local. Pick one:
+
+| Setup | What to do |
+| --- | --- |
+| Everything local | `npm run dev`, and put `VITE_TELEGRAM_BACKEND_URL=http://localhost:8000` in the frontend's `.env` |
+| Vercel frontend, backend on your PC | Put an HTTPS tunnel in front of it — `cloudflared tunnel --url http://localhost:8000` prints a public HTTPS URL; use that in the Vercel env vars |
+| Always-on | Run it on a small VPS with Docker (below) instead of your PC |
+
+Auto-download and auto-forward only run while this service is running, so on a
+home PC they stop when it sleeps or shuts down. If you want them to keep
+working overnight, the VPS route is the honest answer; otherwise disable sleep
+and leave the window open.
+
 ### Docker
 
 ```bash

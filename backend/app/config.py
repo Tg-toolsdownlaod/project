@@ -1,5 +1,6 @@
 """Environment-backed configuration for the userbot service."""
 import os
+import tempfile
 
 from dotenv import load_dotenv
 
@@ -41,7 +42,8 @@ class Settings:
 
     worker_interval = _get_int("WORKER_INTERVAL", 30)
     max_concurrent_downloads = _get_int("MAX_CONCURRENT_DOWNLOADS", 0)
-    download_dir = _get("DOWNLOAD_DIR", "/tmp/tg-downloads")
+    # Default per platform, so Windows does not end up with a stray C:\tmp.
+    download_dir = _get("DOWNLOAD_DIR") or os.path.join(tempfile.gettempdir(), "tg-downloads")
 
 
 settings = Settings()
