@@ -167,12 +167,12 @@ const FAQ: { q: { en: string; km: string }; a: { en: string; km: string } }[] = 
   },
   {
     q: {
-      en: 'Too many forwards at once',
-      km: 'បញ្ជូនបន្តច្រើនពេកក្នុងពេលតែមួយ',
+      en: 'Can I make downloads faster or forwards 100% guaranteed?',
+      km: 'តើអាចធ្វើអោយទាញយកលឿនជាង ឬធានា forward បាន 100% ដែរឬទេ?',
     },
     a: {
-      en: 'Telegram rate-limits an account that forwards fast. The service already pauses between messages; if you still hit a flood-wait, forward in smaller batches or raise the pause in the service config.',
-      km: 'Telegram កំណត់ល្បឿនសម្រាប់គណនីដែលបញ្ជូនលឿនពេក។ សេវាមានការឈប់សម្រាករវាងសារនីមួយៗរួចហើយ បើនៅតែជួប flood-wait សូមបញ្ជូនជាបណ្តុំតូចជាង ឬបង្កើនរយៈពេលឈប់ក្នុងការកំណត់សេវា។',
+      en: 'Partly, honestly. Telegram enforces its own per-account speed limit (FLOOD_WAIT) on its servers — no app, this one or the official Telegram client, can turn that off; claiming otherwise would be false. What this service does do: downloads already run on up to 8 parallel connections per file and grow automatically, MAX_CONCURRENT_DOWNLOADS has no built-in ceiling (raise it as high as your machine allows), and every download or forward that does hit a FLOOD_WAIT now waits out the exact time Telegram asks and retries automatically, up to 6 times, instead of just failing. A source group with content protection still blocks real forwarding no matter what — the "Re-upload every video" copy mode is the actual way around that, not a faster retry.',
+      km: 'ពិតជាបានផ្នែកខ្លះ ប៉ុន្តែសូមនិយាយត្រង់ៗ។ Telegram កំណត់ល្បឿនផ្ទាល់លើ server របស់វា (FLOOD_WAIT) ចំពោះគណនីនីមួយៗ — គ្មាន app ណាមួយ ទោះជា app នេះ ឬ Telegram ផ្លូវការ អាចបិទវាបានទេ។ អ្វីដែលសេវានេះពិតជាធ្វើ៖ ការទាញយកប្រើ connection ស្របគ្នារហូតដល់ 8 ក្នុងឯកសារមួយ និងកើនដោយស្វ័យប្រវត្តិ, MAX_CONCURRENT_DOWNLOADS គ្មានដែនកំណត់ក្នុងកូដទេ (កំណត់តាមចិត្តអ្នកតាមកម្លាំងម៉ាស៊ីន), ហើយរាល់ការទាញយក ឬ forward ដែលជួប FLOOD_WAIT ឥឡូវនេះនឹងរង់ចាំគ្រប់ចំនួនវិនាទីដែល Telegram ស្នើ រួចព្យាយាមម្តងទៀតដោយស្វ័យប្រវត្តិ រហូតដល់ 6 ដង ជំនួសឲ្យការបរាជ័យភ្លាម។ ក្រុមដែលបើក content protection នៅតែហាម forward ពិតប្រាកដ — របៀប "Re-upload every video" ទើបជាដំណោះស្រាយពិត មិនមែនការព្យាយាមឡើងវិញលឿនជាងនោះទេ។',
     },
   },
 ];

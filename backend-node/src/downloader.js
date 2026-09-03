@@ -5,6 +5,7 @@ import path from "node:path";
 import { config } from "./config.js";
 import { db, downloadSettings, nowIso, rows } from "./db.js";
 import * as r2 from "./r2.js";
+import { withFloodRetry } from "./floodRetry.js";
 import { getClient, normalizeChatId } from "./telegram.js";
 
 const running = new Set();
@@ -88,7 +89,10 @@ export async function runDownload(downloadId) {
 
     const client = await getClient();
     const entity = await client.getEntity(normalizeChatId(group.chat_id));
-    const message = await client.getMessages(entity, { ids: Number(episode.message_id) });
+    const message = await withFloodRetry(
+      () => client.getMessages(entity, { ids: Number(episode.message_id) }),
+      { label: `getMessages for episode ${episode.id}` }
+    );
     const found = Array.isArray(message) ? message[0] : message;
     if (!found?.media) {
       await fail(downloadId, "The source message no longer has media.", episode.id);
@@ -102,24 +106,28 @@ export async function runDownload(downloadId) {
     );
 
     let lastReport = 0;
-    await client.downloadMedia(found, {
-      outputFile: localPath,
-      progressCallback: (received, total) => {
-        const now = Date.now();
-        if (now - lastReport < 2000) return; // keep the write rate sane
-        lastReport = now;
-        const done = Number(received);
-        const size = Number(total);
-        void db()
-          .from("downloads")
-          .update({
-            progress: size ? Math.floor((done / size) * 90) : 0,
-            downloaded_bytes: done,
-            total_bytes: size,
-          })
-          .eq("id", downloadId);
-      },
-    });
+    await withFloodRetry(
+      () =>
+        client.downloadMedia(found, {
+          outputFile: localPath,
+          progressCallback: (received, total) => {
+            const now = Date.now();
+            if (now - lastReport < 2000) return; // keep the write rate sane
+            lastReport = now;
+            const done = Number(received);
+            const size = Number(total);
+            void db()
+              .from("downloads")
+              .update({
+                progress: size ? Math.floor((done / size) * 90) : 0,
+                downloaded_bytes: done,
+                total_bytes: size,
+              })
+              .eq("id", downloadId);
+          },
+        }),
+      { label: `download for episode ${episode.id}` }
+    );
 
     const conf = await downloadSettings();
     let r2Key = null;

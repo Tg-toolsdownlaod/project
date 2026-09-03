@@ -5,10 +5,14 @@ import path from "node:path";
 import { config } from "./config.js";
 import { db, nowIso, rows } from "./db.js";
 import { safeFilename } from "./downloader.js";
+import { withFloodRetry } from "./floodRetry.js";
 import { getClient, normalizeChatId } from "./telegram.js";
 
 // Telegram rate limits forwards hard; this pause keeps a long job alive.
-const PAUSE_BETWEEN_MESSAGES = 1500;
+// A genuine FLOOD_WAIT from Telegram is honored in full regardless (see
+// floodRetry.js) -- this is only the polite gap between calls that stays well
+// under the threshold that would trigger one.
+const PAUSE_BETWEEN_MESSAGES = config.forwardPauseMs;
 const running = new Set();
 
 /**
@@ -161,17 +165,24 @@ async function forwardOne({ client, sourceEntity, target, targetTopic, messageId
   let sent;
 
   if (targetTopic === null && sourceEntity) {
-    sent = await client.forwardMessages(target, { messages: [messageId], fromPeer: sourceEntity });
+    sent = await withFloodRetry(
+      () => client.forwardMessages(target, { messages: [messageId], fromPeer: sourceEntity }),
+      { label: `forward message ${messageId}` }
+    );
   } else {
     // Forum topics need a fresh send, because Telegram's forward call cannot
     // target a topic. The file reference is reused, so nothing is downloaded
     // or uploaded again -- but the message loses its "forwarded from" header.
     const found = await fetchMessage(client, sourceEntity, messageId);
-    sent = await client.sendFile(target, {
-      file: found.media,
-      caption: found.message || "",
-      replyTo: targetTopic ?? undefined,
-    });
+    sent = await withFloodRetry(
+      () =>
+        client.sendFile(target, {
+          file: found.media,
+          caption: found.message || "",
+          replyTo: targetTopic ?? undefined,
+        }),
+      { label: `re-send message ${messageId} into a topic` }
+    );
   }
 
   const first = Array.isArray(sent) ? sent[0] : sent;
@@ -191,14 +202,20 @@ async function reuploadOne({ client, sourceEntity, target, targetTopic, messageI
   );
 
   try {
-    await client.downloadMedia(found, { outputFile: localPath });
-    const sent = await client.sendFile(target, {
-      file: localPath,
-      caption: found.message || "",
-      replyTo: targetTopic ?? undefined,
-      supportsStreaming: true,
-      forceDocument: false,
+    await withFloodRetry(() => client.downloadMedia(found, { outputFile: localPath }), {
+      label: `download message ${messageId} for re-upload`,
     });
+    const sent = await withFloodRetry(
+      () =>
+        client.sendFile(target, {
+          file: localPath,
+          caption: found.message || "",
+          replyTo: targetTopic ?? undefined,
+          supportsStreaming: true,
+          forceDocument: false,
+        }),
+      { label: `re-upload message ${messageId}` }
+    );
     const first = Array.isArray(sent) ? sent[0] : sent;
     return first?.id ? String(first.id) : null;
   } finally {
@@ -207,7 +224,9 @@ async function reuploadOne({ client, sourceEntity, target, targetTopic, messageI
 }
 
 async function fetchMessage(client, sourceEntity, messageId) {
-  const message = await client.getMessages(sourceEntity, { ids: messageId });
+  const message = await withFloodRetry(() => client.getMessages(sourceEntity, { ids: messageId }), {
+    label: `getMessages ${messageId}`,
+  });
   const found = Array.isArray(message) ? message[0] : message;
   if (!found?.media) throw new Error("The source message no longer has media.");
   return found;

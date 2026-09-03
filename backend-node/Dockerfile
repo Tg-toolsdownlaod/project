@@ -5,7 +5,7 @@ ENV NODE_ENV=production \
 
 WORKDIR /srv
 
-COPY package.json ./
+COPY package.json package-lock.json* ./
 RUN npm install --omit=dev
 
 COPY src ./src

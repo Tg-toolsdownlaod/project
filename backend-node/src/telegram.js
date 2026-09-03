@@ -3,6 +3,7 @@
 import { Api, TelegramClient } from "teleproto";
 import { StringSession } from "teleproto/sessions/index.js";
 
+import { config } from "./config.js";
 import { nowIso, telegramSettings, upsertSingle } from "./db.js";
 
 let client = null;
@@ -19,7 +20,16 @@ export async function getClient({ requireAuth = true } = {}) {
       new StringSession(conf.sessionString || ""),
       Number(conf.apiId),
       conf.apiHash,
-      { connectionRetries: 5 }
+      {
+        connectionRetries: 5,
+        // 0 (the default) leaves teleproto's own auto-scaling in place, which
+        // already opens up to 8 parallel connections per download and grows
+        // the transfer window on its own -- see config.js for why this is
+        // opt-in rather than always maxed out.
+        ...(config.maxDownloadSessions > 0
+          ? { downloadPool: { maxSessions: config.maxDownloadSessions } }
+          : {}),
+      }
     );
   }
   if (!client.connected) await client.connect();

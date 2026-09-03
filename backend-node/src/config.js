@@ -32,6 +32,15 @@ export const config = {
 
   workerInterval: int("WORKER_INTERVAL", 30),
   maxConcurrentDownloads: int("MAX_CONCURRENT_DOWNLOADS", 0),
+  // Telegram's own per-account throttle, not a cap we invent: teleproto already
+  // opens up to 8 parallel connections per download and grows the window
+  // automatically. Raising this trades a small chance of an extra FLOOD_WAIT
+  // for more throughput on fast links; 0 leaves the library's own default.
+  maxDownloadSessions: int("TELEGRAM_MAX_DOWNLOAD_SESSIONS", 0),
+  // How long the forwarder waits between messages by choice, to stay well
+  // under Telegram's flood limits. Any FLOOD_WAIT Telegram actually returns is
+  // honored in full regardless of this value -- see floodRetry.js.
+  forwardPauseMs: int("FORWARD_PAUSE_MS", 1500),
   // Default per platform, so Windows does not end up with a stray C:\tmp.
   downloadDir: str("DOWNLOAD_DIR") || path.join(os.tmpdir(), "tg-downloads"),
 };

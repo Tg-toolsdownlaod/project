@@ -80,6 +80,46 @@ docker run --env-file .env -p 8000:8000 tg-downloader-backend-node
 Run **one** instance. The Telegram session is stateful, and several userbots
 sharing it will fight over it — Telegram may invalidate the session.
 
+### Railway
+
+The repo already has what Railway needs: `Dockerfile` and `railway.toml` in
+this directory build the service and poll `/health` before routing traffic to
+it.
+
+1. **New service → Deploy from GitHub repo**, pick this repository.
+2. **Settings → Root Directory** → set it to `backend-node` (Railway builds
+   the whole repo otherwise, and the Dockerfile's `COPY` paths are relative to
+   this folder).
+3. **Get a session string before you deploy, not after.** Railway has no
+   interactive terminal for `npm run login`'s code prompt. Run it once on your
+   own machine instead:
+   ```bash
+   cd backend-node
+   npm install
+   npm run login
+   ```
+   Paste the printed string into Railway as `TELEGRAM_SESSION_STRING` in the
+   next step — the service reads it from the environment on boot and never
+   needs to log in again.
+4. **Variables** — add everything from `.env.example`: `BACKEND_API_KEY`,
+   `SUPABASE_URL`, `SUPABASE_SERVICE_ROLE_KEY`, `TELEGRAM_API_ID`,
+   `TELEGRAM_API_HASH`, `TELEGRAM_PHONE`, `TELEGRAM_SESSION_STRING` (from step
+   3), and the R2 variables if you're not keeping those in Supabase. Leave
+   `PORT` unset — Railway injects its own and the service already reads it.
+   Set `CORS_ORIGINS` to your actual frontend origin, e.g.
+   `https://tg-tools-downlaod.vercel.app`.
+5. **Deploy.** Railway gives the service a public HTTPS URL
+   (`https://<name>.up.railway.app`) — put that in the frontend's
+   `VITE_TELEGRAM_BACKEND_URL`, and `BACKEND_API_KEY`'s value in
+   `VITE_TELEGRAM_BACKEND_KEY`, then redeploy the frontend on Vercel.
+6. **Confirm it's alive**: `curl https://<name>.up.railway.app/health` should
+   answer `{"success":true,"telegram":true,...}`. `telegram: false` means the
+   session string was not picked up — check the variable is set and redeploy.
+
+Railway's filesystem is ephemeral (wiped on every redeploy), which is fine
+here: downloaded files are removed right after the R2 upload, so nothing
+needs to survive a restart except the environment variables themselves.
+
 ## Credentials
 
 `api_id`, `api_hash`, the session string and the R2 secret key are read from
@@ -116,13 +156,41 @@ fork of GramJS (the `telegram` package is archived). One API difference matters
 here: forum topics are fetched with `messages.GetForumTopics`, not
 `channels.GetForumTopics` as in older GramJS.
 
-## Rate limits
+## Speed and limits — what is actually true
 
-Telegram will flood-wait an account that forwards too fast. The forwarder
-pauses 1.5s between messages; raise `PAUSE_BETWEEN_MESSAGES` in
-`forwarder.js` if you hit a flood-wait error on large batches. Scanning reads
-at most 3000 messages per call — pass `{"limit": N}` to the scan endpoint for
-a deeper history.
+There is no setting, here or anywhere, that makes Telegram stop rate-limiting
+an account. `FLOOD_WAIT` is enforced on Telegram's servers, per account, and
+every client is bound by it equally — the official app included. Anything
+promising unlimited speed or a guaranteed 100% forward rate is either lying or
+about to get the account temporarily locked out. What this service actually
+does, and why that is close to the practical ceiling:
+
+- **Downloads already run in parallel per file.** teleproto opens up to 8
+  connections per download and grows the transfer window on its own — this
+  is not a single-threaded fetch. `TELEGRAM_MAX_DOWNLOAD_SESSIONS` raises that
+  ceiling further if your link can use it; leaving it unset keeps the
+  library's tuned default.
+- **`MAX_CONCURRENT_DOWNLOADS` has no ceiling in the code.** Set it as high as
+  your CPU, disk and bandwidth allow. The queue will run that many downloads
+  at once.
+- **A real `FLOOD_WAIT` is always honored, not treated as a failure.** Every
+  network call the downloader and forwarder make is wrapped so that if
+  Telegram asks for N seconds, this waits exactly that long and retries —
+  automatically, up to six attempts per call. Marking the item failed after
+  one flood wait would be the actual bug; this is what gets a large batch to finish
+  on its own instead of needing a manual retry.
+- **`FORWARD_PAUSE_MS` (default 1500ms) is a courtesy gap between forwards**,
+  not a hard limit — it exists to trigger fewer flood waits in the first
+  place. Lowering it trades some safety margin for speed; it does not change
+  what Telegram allows.
+- **Scanning reads at most 3000 messages per call** — pass `{"limit": N}` to
+  the scan endpoint for deeper history; this is a request-size choice, not a
+  rate limit.
+- **Some things fail for reasons no retry fixes.** A source group with content
+  protection blocks forwarding outright (see below — re-upload mode is the
+  actual workaround, not a faster retry). A destination the account isn't a
+  member of, or a deleted source message, will fail every time regardless of
+  how long you wait.
 
 ## Forwarding, and why it does not re-upload
 

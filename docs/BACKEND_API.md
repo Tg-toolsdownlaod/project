@@ -199,6 +199,23 @@ it knows from the `episodes` table when they are absent.
 
 ---
 
+## Speed and rate-limit tuning
+
+None of these are separate endpoints — they are environment variables the
+service reads on boot (`backend-node/.env.example`):
+
+| Variable | Default | What it does |
+| --- | --- | --- |
+| `MAX_CONCURRENT_DOWNLOADS` | unset (uses `download_settings.concurrent_downloads`, default 3) | No hardcoded ceiling — raise it as high as the host's CPU/disk/network allow. |
+| `TELEGRAM_MAX_DOWNLOAD_SESSIONS` | unset (library default: up to 8, auto-scaling) | Raises the per-file parallel-connection ceiling teleproto already uses. |
+| `FORWARD_PAUSE_MS` | 1500 | Courtesy gap between forwards, to trigger fewer flood waits. Not a hard limit. |
+
+Every download and forward call is wrapped so a real `FLOOD_WAIT` from
+Telegram is waited out in full and retried automatically (up to 6 attempts)
+rather than counted as a failure. There is no way to disable Telegram's own
+per-account throttle — see `backend-node/README.md` § *Speed and limits* for
+the honest version of what "as fast as possible" means here.
+
 ## Health
 
 ### `GET /health`
