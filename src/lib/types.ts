@@ -188,9 +188,7 @@ export type PageKey =
   | 'dashboard'
   | 'groups'
   | 'downloads'
-  | 'autodownload'
-  | 'forwards'
+  | 'automation'
   | 'urllists'
-  | 'r2'
-  | 'telegram'
-  | 'settings';
+  | 'settings'
+  | 'guide';

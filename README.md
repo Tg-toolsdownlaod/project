@@ -11,13 +11,12 @@ Cloudflare R2, and forward them into another group.
 | --- | --- |
 | `src/` | The React + Vite frontend (deployed to Vercel) |
 | `supabase/migrations/` | Database schema |
-| `backend-node/` | Userbot service — Node.js + teleproto **(recommended)** |
-| `backend/` | The same service in Python + Telethon (alternative) |
+| `backend-node/` | Userbot service — Node.js + teleproto |
 | `docs/BACKEND_API.md` | The API contract between frontend and backend |
 
 The frontend on its own can browse and organise what is already in the
-database, but scanning, downloading and forwarding need one of the two backend
-services running — pick one, not both.
+database; scanning, downloading and forwarding need the backend service
+running.
 
 ## Running it
 

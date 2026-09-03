@@ -70,3 +70,43 @@ export interface R2TestResult {
 export function testR2Connection() {
   return callBackend<R2TestResult>('/api/r2/test');
 }
+
+export interface BackendHealth {
+  telegram: boolean;
+  r2: boolean;
+}
+
+/**
+ * Liveness probe. Unlike every other call this is a GET and needs no API key,
+ * so the UI can poll it to show whether the userbot service is up.
+ */
+export async function checkHealth(): Promise<BackendHealth> {
+  if (!BACKEND_URL) throw new Error('Backend URL is not configured.');
+  const res = await fetch(`${BACKEND_URL}/health`);
+  if (!res.ok) throw new Error('The userbot service did not respond.');
+  const data = await res.json();
+  return { telegram: Boolean(data.telegram), r2: Boolean(data.r2) };
+}
+
+/** Lists the groups the userbot is a member of, so a chat ID need not be typed. */
+export function listDialogs() {
+  return callBackend<{ dialogs: DialogInfo[] }>('/api/telegram/dialogs');
+}
+
+export interface DialogInfo {
+  chat_id: string;
+  title: string;
+  username: string | null;
+  is_forum: boolean;
+  participants_count: number | null;
+}
+
+/** Joins a public group or an invite link, then returns the group it resolved to. */
+export function joinChat(invite: string) {
+  return callBackend<ResolvedGroupInfo & { chat_id: string }>('/api/telegram/join', { invite });
+}
+
+/** Sends a short message to the userbot's own Saved Messages. */
+export function notifySelf(text: string) {
+  return callBackend('/api/telegram/notify', { text });
+}

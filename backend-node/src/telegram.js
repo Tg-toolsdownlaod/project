@@ -175,6 +175,67 @@ export async function listTopics(entity) {
   return found;
 }
 
+/**
+ * The groups and channels this account is already in, so a chat ID never has
+ * to be copied by hand. Private chats and bots are left out — only places
+ * videos can be scanned from.
+ */
+export async function listDialogs(limit = 200) {
+  const c = await getClient();
+  const dialogs = await c.getDialogs({ limit });
+
+  return dialogs
+    .filter((d) => d.isGroup || d.isChannel)
+    .map((d) => ({
+      chat_id: String(d.id),
+      title: d.title || d.name || String(d.id),
+      username: d.entity?.username ?? null,
+      is_forum: Boolean(d.entity?.forum),
+      participants_count: d.entity?.participantsCount ?? null,
+    }));
+}
+
+/**
+ * Joins a public @name or a t.me/+hash invite link, then describes what was
+ * joined so the UI can add it straight away.
+ */
+export async function joinChat(invite) {
+  const c = await getClient();
+  const value = String(invite ?? "").trim();
+  if (!value) throw new Error("An invite link or @username is required.");
+
+  const hashMatch = value.match(/(?:joinchat\/|\+)([\w-]+)/);
+  if (hashMatch) {
+    try {
+      await c.invoke(new Api.messages.ImportChatInvite({ hash: hashMatch[1] }));
+    } catch (err) {
+      // Already a member is a success for our purposes.
+      if (!String(err?.errorMessage ?? "").includes("USER_ALREADY_PARTICIPANT")) throw err;
+    }
+    const check = await c.invoke(new Api.messages.CheckChatInvite({ hash: hashMatch[1] }));
+    const chat = check.chat ?? check;
+    const chatId = chat?.id ? String(chat.id) : "";
+    return { ...(await describeGroup(chatId || value)), chat_id: chatId };
+  }
+
+  const username = value.startsWith("@") ? value : `@${value.split("/").pop()}`;
+  const entity = await c.getEntity(username);
+  await c.invoke(new Api.channels.JoinChannel({ channel: entity })).catch((err) => {
+    if (!String(err?.errorMessage ?? "").includes("USER_ALREADY_PARTICIPANT")) throw err;
+  });
+  return { ...(await describeGroup(username)), chat_id: String(entity.id) };
+}
+
+/**
+ * Sends a note to the account's own Saved Messages — used to report that a
+ * batch finished without needing push notifications or email.
+ */
+export async function notifySelf(text) {
+  const c = await getClient();
+  await c.sendMessage("me", { message: String(text ?? "").slice(0, 4000) });
+  return { success: true };
+}
+
 /** Everything the Add/Forward dialogs show before anything is written. */
 export async function describeGroup(chatId) {
   const c = await getClient();

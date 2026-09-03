@@ -1,17 +1,16 @@
 import { useState } from 'react';
-import { Sidebar } from '@/components/Sidebar';
+
 import { Header } from '@/components/Header';
+import { Sidebar } from '@/components/Sidebar';
+import { AutomationPage } from '@/pages/AutomationPage';
 import { DashboardPage } from '@/pages/DashboardPage';
-import { GroupsPage } from '@/pages/GroupsPage';
 import { DownloadsPage } from '@/pages/DownloadsPage';
-import { AutoDownloadPage } from '@/pages/AutoDownloadPage';
-import { ForwardsPage } from '@/pages/ForwardsPage';
-import { UrlListsPage } from '@/pages/UrlListsPage';
-import { R2Page } from '@/pages/R2Page';
-import { TelegramPage } from '@/pages/TelegramPage';
+import { GroupsPage } from '@/pages/GroupsPage';
+import { GuidePage } from '@/pages/GuidePage';
 import { SettingsPage } from '@/pages/SettingsPage';
-import type { PageKey } from '@/lib/types';
+import { UrlListsPage } from '@/pages/UrlListsPage';
 import { useLanguage } from '@/lib/i18n';
+import type { PageKey } from '@/lib/types';
 
 function App() {
   const [currentPage, setCurrentPage] = useState<PageKey>('dashboard');
@@ -22,42 +21,43 @@ function App() {
     dashboard: { title: t('page.dashboard.title'), subtitle: t('page.dashboard.subtitle') },
     groups: { title: t('page.groups.title'), subtitle: t('page.groups.subtitle') },
     downloads: { title: t('page.downloads.title'), subtitle: t('page.downloads.subtitle') },
-    autodownload: { title: t('page.autodownload.title'), subtitle: t('page.autodownload.subtitle') },
-    forwards: { title: t('page.forwards.title'), subtitle: t('page.forwards.subtitle') },
+    automation: { title: t('page.automation.title'), subtitle: t('page.automation.subtitle') },
     urllists: { title: t('page.urllists.title'), subtitle: t('page.urllists.subtitle') },
-    r2: { title: t('page.r2.title'), subtitle: t('page.r2.subtitle') },
-    telegram: { title: t('page.telegram.title'), subtitle: t('page.telegram.subtitle') },
     settings: { title: t('page.settings.title'), subtitle: t('page.settings.subtitle') },
+    guide: { title: t('page.guide.title'), subtitle: t('page.guide.subtitle') },
   };
 
   const info = PAGE_INFO[currentPage];
 
   const renderPage = () => {
     switch (currentPage) {
-      case 'dashboard': return <DashboardPage />;
-      case 'groups': return <GroupsPage />;
-      case 'downloads': return <DownloadsPage />;
-      case 'autodownload': return <AutoDownloadPage />;
-      case 'forwards': return <ForwardsPage />;
-      case 'urllists': return <UrlListsPage />;
-      case 'r2': return <R2Page />;
-      case 'telegram': return <TelegramPage />;
-      case 'settings': return <SettingsPage />;
+      case 'dashboard':
+        return <DashboardPage onNavigate={setCurrentPage} />;
+      case 'groups':
+        return <GroupsPage />;
+      case 'downloads':
+        return <DownloadsPage />;
+      case 'automation':
+        return <AutomationPage />;
+      case 'urllists':
+        return <UrlListsPage />;
+      case 'settings':
+        return <SettingsPage />;
+      case 'guide':
+        return <GuidePage onNavigate={setCurrentPage} />;
     }
   };
 
   return (
-    <div className="flex h-screen bg-dark-950 text-white overflow-hidden">
+    <div className="flex h-screen overflow-hidden bg-dark-950 text-white">
       <Sidebar currentPage={currentPage} onNavigate={setCurrentPage} collapsed={sidebarCollapsed} />
-      <div className="flex-1 flex flex-col min-w-0">
+      <div className="flex min-w-0 flex-1 flex-col">
         <Header
           onToggleSidebar={() => setSidebarCollapsed(!sidebarCollapsed)}
           title={info.title}
           subtitle={info.subtitle}
         />
-        <main className="flex-1 overflow-y-auto p-6">
-          {renderPage()}
-        </main>
+        <main className="flex-1 overflow-y-auto p-4 md:p-6">{renderPage()}</main>
       </div>
     </div>
   );

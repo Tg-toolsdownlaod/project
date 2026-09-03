@@ -1,320 +1,462 @@
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import {
-  DownloadCloud,
-  CheckCircle2,
-  XCircle,
-  HardDrive,
-  TrendingUp,
   Activity,
-  Zap,
-  Clock,
+  ArrowRight,
+  CheckCircle2,
+  Cloud,
+  DownloadCloud,
   Film,
+  HardDrive,
+  Layers,
+  Plus,
+  RefreshCw,
   Send,
-  User,
-  AtSign,
+  Users,
+  XCircle,
+  Zap,
 } from 'lucide-react';
+
+import { ActivityChart, type ActivityPoint } from '@/components/ActivityChart';
+import { AppLogo, TelegramGlyph } from '@/components/Brand';
 import { supabase } from '@/lib/supabase';
-import type { Download, Episode, Group, TelegramSettings } from '@/lib/types';
+import { useConnectionStatus } from '@/lib/hooks';
+import { backendConfigured } from '@/lib/backend';
+import type { Download, Episode, ForwardJob, Group, PageKey, TelegramSettings, Topic } from '@/lib/types';
 import { formatBytes, formatTimeAgo, getStatusColor } from '@/lib/utils';
 
+const ACTIVITY_DAYS = 14;
+
 interface Stats {
-  totalDownloads: number;
-  completed: number;
-  failed: number;
-  active: number;
-  totalStorage: number;
-  totalEpisodes: number;
   groups: number;
+  topics: number;
+  episodes: number;
+  downloaded: number;
+  queued: number;
+  failed: number;
+  storage: number;
+  forwarded: number;
 }
 
-export function DashboardPage() {
-  const [stats, setStats] = useState<Stats>({
-    totalDownloads: 0,
-    completed: 0,
-    failed: 0,
-    active: 0,
-    totalStorage: 0,
-    totalEpisodes: 0,
-    groups: 0,
-  });
-  const [recentDownloads, setRecentDownloads] = useState<(Download & { episode?: Episode })[]>([]);
-  const [activeGroups, setActiveGroups] = useState<(Group & { topic_count?: number })[]>([]);
-  const [tgSettings, setTgSettings] = useState<TelegramSettings | null>(null);
-  const [loading, setLoading] = useState(true);
+export function DashboardPage({ onNavigate }: { onNavigate: (page: PageKey) => void }) {
+  const [stats, setStats] = useState<Stats | null>(null);
+  const [activity, setActivity] = useState<ActivityPoint[]>([]);
+  const [recent, setRecent] = useState<(Download & { episode?: Episode })[]>([]);
+  const [topGroups, setTopGroups] = useState<{ group: Group; count: number; bytes: number }[]>([]);
+  const [account, setAccount] = useState<TelegramSettings | null>(null);
+  const status = useConnectionStatus();
 
-  useEffect(() => {
-    (async () => {
-      const [dlRes, epRes, groupRes, recentRes, groupsRes, tgRes] = await Promise.all([
-        supabase.from('downloads').select('*'),
-        supabase.from('episodes').select('*'),
-        supabase.from('groups').select('*', { count: 'exact' }),
-        supabase.from('downloads').select('*, episode:episodes(*)').order('created_at', { ascending: false }).limit(8),
-        supabase.from('groups').select('*').eq('active', true).order('updated_at', { ascending: false }).limit(5),
-        supabase.from('telegram_settings').select('*').maybeSingle(),
-      ]);
+  const load = useCallback(async () => {
+    const [dlRes, epRes, groupRes, topicRes, recentRes, tgRes, fwRes] = await Promise.all([
+      supabase.from('downloads').select('id, status, completed_at'),
+      supabase.from('episodes').select('id, group_id, status, file_size, r2_key'),
+      supabase.from('groups').select('*'),
+      supabase.from('topics').select('id'),
+      supabase
+        .from('downloads')
+        .select('*, episode:episodes(*)')
+        .order('created_at', { ascending: false })
+        .limit(6),
+      supabase.from('telegram_settings').select('*').maybeSingle(),
+      supabase.from('forward_jobs').select('forwarded_count'),
+    ]);
 
-      const downloads = dlRes.data as Download[] || [];
-      const episodes = epRes.data as Episode[] || [];
+    const downloads = (dlRes.data as Pick<Download, 'id' | 'status' | 'completed_at'>[]) || [];
+    const episodes = (epRes.data as Episode[]) || [];
+    const groups = (groupRes.data as Group[]) || [];
+    const forwardJobs = (fwRes.data as Pick<ForwardJob, 'forwarded_count'>[]) || [];
 
-      setStats({
-        totalDownloads: downloads.length,
-        completed: downloads.filter((d) => d.status === 'completed').length,
-        failed: downloads.filter((d) => d.status === 'failed').length,
-        active: downloads.filter((d) => d.status === 'downloading' || d.status === 'queued').length,
-        totalStorage: episodes.reduce((sum, e) => sum + (e.file_size || 0), 0),
-        totalEpisodes: episodes.length,
-        groups: groupRes.count ?? 0,
-      });
+    setStats({
+      groups: groups.length,
+      topics: ((topicRes.data as Topic[]) || []).length,
+      episodes: episodes.length,
+      downloaded: episodes.filter((e) => e.status === 'completed').length,
+      queued: downloads.filter((d) => d.status === 'queued' || d.status === 'downloading').length,
+      failed: downloads.filter((d) => d.status === 'failed').length,
+      storage: episodes.filter((e) => e.r2_key).reduce((sum, e) => sum + (e.file_size || 0), 0),
+      forwarded: forwardJobs.reduce((sum, j) => sum + (j.forwarded_count || 0), 0),
+    });
 
-      setRecentDownloads((recentRes.data as (Download & { episode?: Episode })[]) || []);
-      setActiveGroups((groupsRes.data as (Group & { topic_count?: number })[]) || []);
-      setTgSettings((tgRes.data as TelegramSettings) || null);
-      setLoading(false);
-    })();
+    setActivity(buildActivity(downloads));
+    setRecent((recentRes.data as (Download & { episode?: Episode })[]) || []);
+    setAccount((tgRes.data as TelegramSettings) || null);
+
+    setTopGroups(
+      groups
+        .map((group) => {
+          const own = episodes.filter((e) => e.group_id === group.id);
+          return {
+            group,
+            count: own.length,
+            bytes: own.reduce((sum, e) => sum + (e.file_size || 0), 0),
+          };
+        })
+        .filter((row) => row.count > 0)
+        .sort((a, b) => b.bytes - a.bytes)
+        .slice(0, 5)
+    );
   }, []);
 
-  const statCards = [
-    { label: 'Total Downloads', value: stats.totalDownloads, icon: DownloadCloud, color: 'primary', change: '+12%' },
-    { label: 'Completed', value: stats.completed, icon: CheckCircle2, color: 'success', change: '+8%' },
-    { label: 'Failed', value: stats.failed, icon: XCircle, color: 'error', change: '-2%' },
-    { label: 'Active Now', value: stats.active, icon: Activity, color: 'accent', change: 'live' },
-  ];
+  useEffect(() => {
+    load();
+  }, [load]);
 
-  const colorMap: Record<string, string> = {
-    primary: 'from-primary-500/20 to-primary-500/5 text-primary-400 border-primary-500/20',
-    success: 'from-success-500/20 to-success-500/5 text-success-400 border-success-500/20',
-    error: 'from-error-500/20 to-error-500/5 text-error-400 border-error-500/20',
-    accent: 'from-accent-500/20 to-accent-500/5 text-accent-400 border-accent-500/20',
-  };
+  const accountName = [account?.account_first_name, account?.account_last_name]
+    .filter(Boolean)
+    .join(' ');
 
   return (
-    <div className="space-y-6 animate-fade-in">
-      {/* Stat Cards */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-        {statCards.map((stat) => {
-          const Icon = stat.icon;
-          return (
-            <div
-              key={stat.label}
-              className={`relative overflow-hidden rounded-xl border bg-gradient-to-br ${colorMap[stat.color]} p-5 card-hover`}
-            >
-              <div className="flex items-start justify-between mb-3">
-                <div className={`p-2 rounded-lg bg-dark-900/40`}>
-                  <Icon className="w-5 h-5" />
-                </div>
-                {stat.change !== 'live' && (
-                  <span className="text-xs text-dark-400 flex items-center gap-1">
-                    <TrendingUp className="w-3 h-3" /> {stat.change}
-                  </span>
-                )}
-                {stat.change === 'live' && (
-                  <span className="text-xs text-accent-400 flex items-center gap-1 font-medium">
-                    <span className="w-1.5 h-1.5 bg-accent-400 rounded-full animate-pulse" /> live
-                  </span>
-                )}
-              </div>
-              <p className="text-3xl font-bold text-white tabular-nums">
-                {loading ? '—' : stat.value}
-              </p>
-              <p className="text-xs text-dark-400 mt-1">{stat.label}</p>
-            </div>
-          );
-        })}
-      </div>
+    <div className="space-y-4 animate-fade-in">
+      {/* Hero */}
+      <section className="relative overflow-hidden rounded-2xl border border-dark-800 bg-gradient-to-br from-dark-900 via-dark-900 to-primary-950/40 p-6">
+        <div className="pointer-events-none absolute -right-10 -top-24 h-64 w-64 rounded-full bg-primary-500/10 blur-3xl" />
+        <div className="pointer-events-none absolute -bottom-24 left-1/3 h-56 w-56 rounded-full bg-accent-500/10 blur-3xl" />
 
-      {/* Userbot + System Status Bar */}
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-        <div className={`rounded-xl border p-4 flex items-center gap-3 ${
-          tgSettings?.connected
-            ? 'border-success-500/30 bg-gradient-to-br from-success-500/10 to-dark-900'
-            : 'border-dark-800 bg-dark-900/60'
-        }`}>
-          <div className={`w-10 h-10 rounded-lg flex items-center justify-center shrink-0 ${tgSettings?.connected ? 'bg-success-500/20' : 'bg-dark-800'}`}>
-            <Send className={`w-5 h-5 ${tgSettings?.connected ? 'text-success-400' : 'text-dark-500'}`} />
-          </div>
-          <div className="min-w-0">
-            <p className="text-xs text-dark-500">Userbot</p>
-            <p className="text-sm font-bold text-white truncate">
-              {tgSettings?.connected
-                ? (tgSettings.account_username
-                    ? '@' + tgSettings.account_username
-                    : [tgSettings.account_first_name, tgSettings.account_last_name].filter(Boolean).join(' ') || tgSettings.phone || 'Connected')
-                : 'Offline'}
-            </p>
-          </div>
-        </div>
-
-        <div className="rounded-xl border border-dark-800 bg-dark-900/60 p-4 flex items-center gap-3">
-          <div className="w-10 h-10 rounded-lg bg-primary-500/20 flex items-center justify-center shrink-0">
-            <User className="w-5 h-5 text-primary-400" />
-          </div>
-          <div className="min-w-0">
-            <p className="text-xs text-dark-500">Account ID</p>
-            <p className="text-sm font-bold text-white font-mono truncate">
-              {tgSettings?.account_user_id || (tgSettings?.phone || '—')}
-            </p>
-          </div>
-        </div>
-
-        <div className="rounded-xl border border-dark-800 bg-dark-900/60 p-4 flex items-center gap-3">
-          <div className="w-10 h-10 rounded-lg bg-accent-500/20 flex items-center justify-center shrink-0">
-            <AtSign className="w-5 h-5 text-accent-400" />
-          </div>
-          <div className="min-w-0">
-            <p className="text-xs text-dark-500">Username</p>
-            <p className="text-sm font-bold text-white truncate">
-              {tgSettings?.account_username ? '@' + tgSettings.account_username : '—'}
-            </p>
-          </div>
-        </div>
-
-        <div className="rounded-xl border border-dark-800 bg-dark-900/60 p-4 flex items-center gap-3">
-          <div className="w-10 h-10 rounded-lg bg-warning-500/20 flex items-center justify-center shrink-0">
-            <Clock className="w-5 h-5 text-warning-400" />
-          </div>
-          <div className="min-w-0">
-            <p className="text-xs text-dark-500">Last Connected</p>
-            <p className="text-sm font-bold text-white truncate">
-              {tgSettings?.connected ? formatTimeAgo(tgSettings.last_connected_at) : '—'}
-            </p>
-          </div>
-        </div>
-      </div>
-
-      {/* Storage + Episodes overview */}
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
-        <div className="lg:col-span-2 rounded-xl border border-dark-800 bg-dark-900/60 p-5">
-          <div className="flex items-center justify-between mb-4">
-            <div>
-              <h3 className="text-sm font-semibold text-white">Recent Downloads</h3>
-              <p className="text-xs text-dark-500">Latest download activity</p>
-            </div>
-            <Activity className="w-4 h-4 text-dark-500" />
-          </div>
-
-          {recentDownloads.length === 0 && !loading ? (
-            <div className="text-center py-12">
-              <DownloadCloud className="w-10 h-10 text-dark-700 mx-auto mb-3" />
-              <p className="text-sm text-dark-500">No downloads yet</p>
-              <p className="text-xs text-dark-600 mt-1">Add a group and start downloading episodes</p>
-            </div>
-          ) : (
-            <div className="space-y-2">
-              {recentDownloads.map((dl) => (
-                <div
-                  key={dl.id}
-                  className="flex items-center gap-3 p-3 rounded-lg bg-dark-800/40 hover:bg-dark-800/70 transition-colors"
-                >
-                  <div className="w-9 h-9 rounded-lg bg-dark-700/50 flex items-center justify-center shrink-0">
-                    <Film className="w-4 h-4 text-dark-400" />
-                  </div>
-                  <div className="flex-1 min-w-0">
-                    <p className="text-sm text-white truncate font-medium">
-                      {dl.episode?.title || dl.episode?.file_name || `Episode ${dl.episode?.ep_number ?? '?'}`}
-                    </p>
-                    <div className="flex items-center gap-2 mt-0.5">
-                      <span className={`text-[10px] px-1.5 py-0.5 rounded-full font-medium ${getStatusColor(dl.status)}`}>
-                        {dl.status}
-                      </span>
-                      <span className="text-[10px] text-dark-500">
-                        {dl.total_bytes > 0 ? formatBytes(dl.downloaded_bytes) + ' / ' + formatBytes(dl.total_bytes) : formatTimeAgo(dl.started_at)}
-                      </span>
-                    </div>
-                  </div>
-                  {dl.status === 'downloading' && (
-                    <div className="w-20 shrink-0">
-                      <div className="h-1.5 bg-dark-700 rounded-full overflow-hidden">
-                        <div className="h-full bg-primary-500 rounded-full transition-all" style={{ width: `${dl.progress}%` }} />
-                      </div>
-                      <p className="text-[10px] text-primary-400 mt-1 text-right tabular-nums">{dl.progress}%</p>
-                    </div>
+        <div className="relative flex flex-wrap items-center gap-4">
+          <AppLogo size={52} className="glow" />
+          <div className="min-w-0 flex-1">
+            <h2 className="text-xl font-bold tracking-tight text-white">TG Downloader</h2>
+            <p className="text-xs text-dark-400">
+              {account?.connected && accountName ? (
+                <>
+                  Signed in as <span className="text-primary-400">{accountName}</span>
+                  {account.account_username && (
+                    <span className="text-dark-500"> · @{account.account_username}</span>
                   )}
-                </div>
-              ))}
-            </div>
-          )}
+                </>
+              ) : (
+                'Connect your Telegram account to start scanning groups'
+              )}
+            </p>
+          </div>
+          <div className="flex flex-wrap items-center gap-2">
+            <StatusChip
+              label="Telegram"
+              ok={status.telegram}
+              icon={<TelegramGlyph className="h-3 w-3" />}
+              onClick={() => onNavigate('settings')}
+            />
+            <StatusChip
+              label="R2"
+              ok={status.r2}
+              icon={<Cloud className="h-3 w-3" />}
+              onClick={() => onNavigate('settings')}
+            />
+            <StatusChip
+              label="Service"
+              ok={status.backend === true}
+              unknown={status.backend === null}
+              icon={<Activity className="h-3 w-3" />}
+              onClick={() => onNavigate('guide')}
+            />
+          </div>
         </div>
 
-        {/* Storage Card */}
-        <div className="rounded-xl border border-dark-800 bg-dark-900/60 p-5">
-          <div className="flex items-center gap-2 mb-4">
-            <HardDrive className="w-4 h-4 text-accent-400" />
-            <h3 className="text-sm font-semibold text-white">R2 Storage</h3>
-          </div>
-          <div className="space-y-4">
+        {!backendConfigured && (
+          <p className="relative mt-4 rounded-lg border border-warning-500/20 bg-warning-500/10 px-3 py-2 text-[11px] text-warning-300">
+            No userbot service is configured yet — scanning, downloading and forwarding stay idle.
+            See <button onClick={() => onNavigate('guide')} className="underline">How to use</button>.
+          </p>
+        )}
+
+        {/* Quick actions */}
+        <div className="relative mt-5 flex flex-wrap gap-2">
+          <QuickAction icon={<Plus className="h-3.5 w-3.5" />} label="Add a group" onClick={() => onNavigate('groups')} primary />
+          <QuickAction icon={<DownloadCloud className="h-3.5 w-3.5" />} label="Download queue" onClick={() => onNavigate('downloads')} />
+          <QuickAction icon={<Send className="h-3.5 w-3.5" />} label="Forward videos" onClick={() => onNavigate('automation')} />
+          <QuickAction icon={<Zap className="h-3.5 w-3.5" />} label="Automation" onClick={() => onNavigate('automation')} />
+        </div>
+      </section>
+
+      {/* KPI row */}
+      <section className="grid grid-cols-2 gap-3 lg:grid-cols-4">
+        <KpiCard
+          icon={<Film className="h-4 w-4" />}
+          label="Videos found"
+          value={stats?.episodes}
+          sub={`${stats?.groups ?? 0} groups · ${stats?.topics ?? 0} topics`}
+          tone="primary"
+          onClick={() => onNavigate('groups')}
+        />
+        <KpiCard
+          icon={<CheckCircle2 className="h-4 w-4" />}
+          label="Downloaded"
+          value={stats?.downloaded}
+          sub={stats ? `${percent(stats.downloaded, stats.episodes)} of all videos` : ''}
+          tone="success"
+          onClick={() => onNavigate('downloads')}
+        />
+        <KpiCard
+          icon={<Send className="h-4 w-4" />}
+          label="Forwarded"
+          value={stats?.forwarded}
+          sub="into other groups"
+          tone="accent"
+          onClick={() => onNavigate('automation')}
+        />
+        <KpiCard
+          icon={<HardDrive className="h-4 w-4" />}
+          label="Stored in R2"
+          value={stats ? formatBytes(stats.storage) : undefined}
+          sub={stats?.failed ? `${stats.failed} failed downloads` : 'no failures'}
+          tone={stats?.failed ? 'warning' : 'muted'}
+          onClick={() => onNavigate('settings')}
+        />
+      </section>
+
+      <div className="grid grid-cols-1 gap-4 xl:grid-cols-3">
+        {/* Activity */}
+        <section className="rounded-2xl border border-dark-800 bg-dark-900/60 p-5 xl:col-span-2">
+          <div className="mb-5 flex items-center justify-between">
             <div>
-              <div className="flex justify-between text-xs mb-2">
-                <span className="text-dark-400">Used Space</span>
-                <span className="text-white font-medium tabular-nums">{formatBytes(stats.totalStorage)}</span>
-              </div>
-              <div className="h-2 bg-dark-800 rounded-full overflow-hidden">
-                <div
-                  className="h-full bg-gradient-to-r from-primary-500 to-accent-500 rounded-full transition-all duration-500"
-                  style={{ width: `${Math.min((stats.totalStorage / (50 * 1024 * 1024 * 1024)) * 100, 100)}%` }}
-                />
-              </div>
-              <p className="text-[10px] text-dark-500 mt-1">{formatBytes(stats.totalStorage)} of 50 GB</p>
+              <h3 className="text-sm font-semibold text-white">Downloads completed</h3>
+              <p className="text-[11px] text-dark-500">Last {ACTIVITY_DAYS} days</p>
             </div>
-
-            <div className="grid grid-cols-2 gap-3 pt-2">
-              <div className="bg-dark-800/40 rounded-lg p-3">
-                <Film className="w-4 h-4 text-primary-400 mb-2" />
-                <p className="text-xl font-bold text-white tabular-nums">{stats.totalEpisodes}</p>
-                <p className="text-[10px] text-dark-500">Episodes</p>
-              </div>
-              <div className="bg-dark-800/40 rounded-lg p-3">
-                <Zap className="w-4 h-4 text-warning-400 mb-2" />
-                <p className="text-xl font-bold text-white tabular-nums">{stats.groups}</p>
-                <p className="text-[10px] text-dark-500">Groups</p>
-              </div>
-            </div>
+            <button
+              onClick={load}
+              className="flex items-center gap-1.5 rounded-lg bg-dark-800 px-2.5 py-1.5 text-[11px] font-medium text-dark-300 transition-colors hover:bg-dark-700 hover:text-white"
+            >
+              <RefreshCw className="h-3 w-3" /> Refresh
+            </button>
           </div>
-        </div>
+          <ActivityChart data={activity} label={`${ACTIVITY_DAYS} days`} />
+        </section>
+
+        {/* Storage + queue */}
+        <section className="space-y-4">
+          <div className="rounded-2xl border border-dark-800 bg-dark-900/60 p-5">
+            <h3 className="mb-3 flex items-center gap-2 text-sm font-semibold text-white">
+              <Layers className="h-4 w-4 text-accent-400" /> Library progress
+            </h3>
+            <p className="text-2xl font-bold tabular-nums text-white">
+              {stats ? `${stats.downloaded}/${stats.episodes}` : '—'}
+            </p>
+            <div className="mt-2 h-2 overflow-hidden rounded-full bg-dark-800">
+              <div
+                className="h-full rounded-full bg-gradient-to-r from-primary-500 to-accent-500 transition-all"
+                style={{ width: stats ? `${ratio(stats.downloaded, stats.episodes)}%` : '0%' }}
+              />
+            </div>
+            <p className="mt-1.5 text-[11px] text-dark-500">
+              {stats ? `${formatBytes(stats.storage)} uploaded to R2` : ''}
+            </p>
+            {(stats?.queued ?? 0) > 0 && (
+              <p className="mt-3 flex items-center gap-1.5 rounded-lg bg-primary-500/10 px-2.5 py-1.5 text-[11px] text-primary-300">
+                <Activity className="h-3 w-3" /> {stats?.queued} in the queue right now
+              </p>
+            )}
+          </div>
+
+          <div className="rounded-2xl border border-dark-800 bg-dark-900/60 p-5">
+            <h3 className="mb-3 flex items-center gap-2 text-sm font-semibold text-white">
+              <Users className="h-4 w-4 text-primary-400" /> Biggest groups
+            </h3>
+            {topGroups.length === 0 ? (
+              <p className="py-4 text-center text-xs text-dark-600">Nothing scanned yet</p>
+            ) : (
+              <div className="space-y-2.5">
+                {topGroups.map(({ group, count, bytes }) => {
+                  const widest = topGroups[0].bytes || 1;
+                  return (
+                    <button
+                      key={group.id}
+                      onClick={() => onNavigate('groups')}
+                      className="block w-full text-left"
+                    >
+                      <div className="flex items-baseline justify-between gap-2">
+                        <span className="truncate text-xs text-dark-300">{group.title}</span>
+                        <span className="shrink-0 text-[10px] tabular-nums text-dark-500">
+                          {count} · {formatBytes(bytes)}
+                        </span>
+                      </div>
+                      <div className="mt-1 h-1.5 overflow-hidden rounded-full bg-dark-800">
+                        <div
+                          className="h-full rounded-full bg-primary-500/70"
+                          style={{ width: `${Math.max((bytes / widest) * 100, 2)}%` }}
+                        />
+                      </div>
+                    </button>
+                  );
+                })}
+              </div>
+            )}
+          </div>
+        </section>
       </div>
 
-      {/* Active Groups */}
-      <div className="rounded-xl border border-dark-800 bg-dark-900/60 p-5">
-        <div className="flex items-center justify-between mb-4">
-          <div>
-            <h3 className="text-sm font-semibold text-white">Active Groups</h3>
-            <p className="text-xs text-dark-500">Monitored Telegram groups</p>
-          </div>
+      {/* Recent activity */}
+      <section className="rounded-2xl border border-dark-800 bg-dark-900/60 p-5">
+        <div className="mb-4 flex items-center justify-between">
+          <h3 className="text-sm font-semibold text-white">Recent downloads</h3>
+          <button
+            onClick={() => onNavigate('downloads')}
+            className="flex items-center gap-1 text-[11px] text-dark-400 transition-colors hover:text-white"
+          >
+            View all <ArrowRight className="h-3 w-3" />
+          </button>
         </div>
-        {activeGroups.length === 0 && !loading ? (
-          <div className="text-center py-8">
-            <p className="text-sm text-dark-500">No active groups yet</p>
-            <p className="text-xs text-dark-600 mt-1">Go to Groups & Topics to add one</p>
+        {recent.length === 0 ? (
+          <div className="py-10 text-center">
+            <DownloadCloud className="mx-auto mb-3 h-10 w-10 text-dark-700" />
+            <p className="text-sm text-dark-500">No downloads yet</p>
+            <p className="mt-1 text-xs text-dark-600">
+              Open a group, pick a topic, and queue a few videos
+            </p>
           </div>
         ) : (
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
-            {activeGroups.map((group) => (
-              <div key={group.id} className="bg-dark-800/40 rounded-lg p-4 border border-dark-700/30 card-hover">
-                <div className="flex items-center justify-between mb-3">
-                  <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-primary-500/30 to-accent-500/30 flex items-center justify-center">
-                    <span className="text-xs font-bold text-white">{group.title.charAt(0).toUpperCase()}</span>
-                  </div>
-                  {group.is_forum && (
-                    <span className="text-[9px] text-accent-400 bg-accent-500/10 px-2 py-0.5 rounded-full font-medium">FORUM</span>
+          <div className="space-y-1.5">
+            {recent.map((download) => (
+              <div
+                key={download.id}
+                className="flex items-center gap-3 rounded-lg bg-dark-800/30 p-3 transition-colors hover:bg-dark-800/60"
+              >
+                <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-dark-800">
+                  {download.status === 'completed' ? (
+                    <CheckCircle2 className="h-4 w-4 text-success-400" />
+                  ) : download.status === 'failed' ? (
+                    <XCircle className="h-4 w-4 text-error-400" />
+                  ) : (
+                    <DownloadCloud className="h-4 w-4 text-primary-400" />
                   )}
                 </div>
-                <p className="text-sm text-white font-medium truncate">{group.title}</p>
-                <p className="text-xs text-dark-500 truncate">{group.username ? '@' + group.username : group.chat_id}</p>
-                <div className="flex items-center gap-3 mt-3 text-xs">
-                  <span className="text-dark-400 flex items-center gap-1">
-                    <Film className="w-3 h-3" /> {group.total_episodes}
-                  </span>
-                  <span className="text-success-400 flex items-center gap-1">
-                    <CheckCircle2 className="w-3 h-3" /> {group.downloaded_episodes}
-                  </span>
-                  <span className="text-dark-500 flex items-center gap-1 ml-auto">
-                    <Clock className="w-3 h-3" /> {formatTimeAgo(group.last_scanned_at)}
-                  </span>
+                <div className="min-w-0 flex-1">
+                  <p className="truncate text-sm font-medium text-white">
+                    {download.episode?.title || download.episode?.file_name || 'Untitled video'}
+                  </p>
+                  <div className="mt-0.5 flex items-center gap-2 text-[10px] text-dark-500">
+                    <span className={`rounded-full px-1.5 py-0.5 font-medium ${getStatusColor(download.status)}`}>
+                      {download.status}
+                    </span>
+                    <span>{formatTimeAgo(download.completed_at || download.queued_at)}</span>
+                    {download.episode?.file_size ? <span>{formatBytes(download.episode.file_size)}</span> : null}
+                  </div>
                 </div>
+                {download.status === 'downloading' && (
+                  <span className="shrink-0 text-xs font-semibold tabular-nums text-primary-400">
+                    {download.progress}%
+                  </span>
+                )}
               </div>
             ))}
           </div>
         )}
-      </div>
+      </section>
     </div>
+  );
+}
+
+/** Buckets completed downloads into one point per day, oldest first. */
+function buildActivity(downloads: Pick<Download, 'status' | 'completed_at'>[]): ActivityPoint[] {
+  const counts = new Map<string, number>();
+  const today = new Date();
+
+  for (let i = ACTIVITY_DAYS - 1; i >= 0; i -= 1) {
+    const day = new Date(today);
+    day.setDate(today.getDate() - i);
+    counts.set(day.toISOString().slice(0, 10), 0);
+  }
+
+  for (const download of downloads) {
+    if (download.status !== 'completed' || !download.completed_at) continue;
+    const key = download.completed_at.slice(0, 10);
+    if (counts.has(key)) counts.set(key, (counts.get(key) ?? 0) + 1);
+  }
+
+  return [...counts.entries()].map(([date, value]) => ({ date, value }));
+}
+
+const ratio = (part: number, whole: number) => (whole > 0 ? Math.min((part / whole) * 100, 100) : 0);
+const percent = (part: number, whole: number) => `${Math.round(ratio(part, whole))}%`;
+
+const TONES: Record<string, string> = {
+  primary: 'text-primary-400 bg-primary-500/10 border-primary-500/20',
+  success: 'text-success-400 bg-success-500/10 border-success-500/20',
+  accent: 'text-accent-400 bg-accent-500/10 border-accent-500/20',
+  warning: 'text-warning-400 bg-warning-500/10 border-warning-500/20',
+  muted: 'text-dark-400 bg-dark-800/50 border-dark-700/50',
+};
+
+function KpiCard({
+  icon,
+  label,
+  value,
+  sub,
+  tone,
+  onClick,
+}: {
+  icon: React.ReactNode;
+  label: string;
+  value: number | string | undefined;
+  sub: string;
+  tone: keyof typeof TONES;
+  onClick: () => void;
+}) {
+  return (
+    <button
+      onClick={onClick}
+      className="card-hover rounded-2xl border border-dark-800 bg-dark-900/60 p-4 text-left transition-colors hover:border-dark-700"
+    >
+      <div className={`mb-3 inline-flex h-8 w-8 items-center justify-center rounded-lg border ${TONES[tone]}`}>
+        {icon}
+      </div>
+      <p className="text-2xl font-bold tabular-nums text-white">{value ?? '—'}</p>
+      <p className="mt-0.5 text-xs font-medium text-dark-300">{label}</p>
+      <p className="mt-0.5 truncate text-[10px] text-dark-500">{sub}</p>
+    </button>
+  );
+}
+
+function StatusChip({
+  label,
+  ok,
+  unknown,
+  icon,
+  onClick,
+}: {
+  label: string;
+  ok: boolean;
+  unknown?: boolean;
+  icon: React.ReactNode;
+  onClick: () => void;
+}) {
+  return (
+    <button
+      onClick={onClick}
+      className={`flex items-center gap-1.5 rounded-lg border px-2.5 py-1.5 text-[11px] font-medium transition-colors ${
+        unknown
+          ? 'border-dark-700/60 bg-dark-800/50 text-dark-500'
+          : ok
+          ? 'border-success-500/25 bg-success-500/10 text-success-400'
+          : 'border-warning-500/25 bg-warning-500/10 text-warning-400'
+      }`}
+    >
+      {icon}
+      {label}
+    </button>
+  );
+}
+
+function QuickAction({
+  icon,
+  label,
+  onClick,
+  primary,
+}: {
+  icon: React.ReactNode;
+  label: string;
+  onClick: () => void;
+  primary?: boolean;
+}) {
+  return (
+    <button
+      onClick={onClick}
+      className={`flex items-center gap-2 rounded-lg px-3 py-2 text-xs font-medium transition-colors ${
+        primary
+          ? 'bg-primary-500 text-white hover:bg-primary-600'
+          : 'bg-dark-800/70 text-dark-300 hover:bg-dark-700 hover:text-white'
+      }`}
+    >
+      {icon}
+      {label}
+    </button>
   );
 }

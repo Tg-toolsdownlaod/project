@@ -102,6 +102,39 @@ app.post(
 );
 
 app.post(
+  "/api/telegram/dialogs",
+  requireApiKey,
+  route(async (req, res) => {
+    const limit = Number(req.body?.limit) || 200;
+    res.json({ success: true, dialogs: await telegram.listDialogs(limit) });
+  })
+);
+
+app.post(
+  "/api/telegram/join",
+  requireApiKey,
+  route(async (req, res) => {
+    const invite = String(req.body?.invite ?? "").trim();
+    if (!invite) {
+      return res.status(400).json({ success: false, error: "invite is required." });
+    }
+    return res.json(await telegram.joinChat(invite));
+  })
+);
+
+app.post(
+  "/api/telegram/notify",
+  requireApiKey,
+  route(async (req, res) => {
+    const text = String(req.body?.text ?? "").trim();
+    if (!text) {
+      return res.status(400).json({ success: false, error: "text is required." });
+    }
+    return res.json(await telegram.notifySelf(text));
+  })
+);
+
+app.post(
   "/api/telegram/groups/:groupId/scan",
   requireApiKey,
   route(async (req, res) => {

@@ -4,10 +4,8 @@ The reference backend the frontend talks to, in Node. It signs in as your
 Telegram account (a "userbot"), scans groups for videos, downloads them,
 uploads them to Cloudflare R2, and forwards videos from one group into another.
 
-This is the **recommended** backend if you already have Node installed for the
-frontend — one runtime, one `npm install`, no Python toolchain. A Python
-implementation of the same API lives in [`../backend`](../backend); run one or
-the other, never both against the same Telegram account.
+Requires only Node — one runtime, one `npm install`. Run **one** instance: the
+Telegram session is stateful, and two userbots sharing it will fight over it.
 
 ```
 src/

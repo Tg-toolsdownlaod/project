@@ -13,11 +13,8 @@ contains `success: false`. The error shown to the user comes from `error`:
 { "success": false, "error": "Could not connect to this group." }
 ```
 
-Two reference implementations exist — run one, not both:
-
-- [`../backend-node`](../backend-node) — Node.js + teleproto (recommended if
-  you already have Node for the frontend)
-- [`../backend`](../backend) — Python + Telethon
+The reference implementation lives in [`../backend-node`](../backend-node)
+(Node.js + teleproto).
 
 ---
 
@@ -81,6 +78,41 @@ Optional body: `{ "limit": 3000 }` — how far back to read.
 
 ```json
 { "success": true, "messages_scanned": 2841, "topics": 7, "new_episodes": 32, "total_episodes": 118 }
+```
+
+### `POST /api/telegram/dialogs`
+The groups and channels the account is already in, so the Add Group dialog can
+offer a list instead of asking for a chat ID. Private chats and bots are left
+out.
+
+Optional body: `{ "limit": 200 }`
+```json
+{
+  "success": true,
+  "dialogs": [
+    { "chat_id": "-1001234567890", "title": "My Anime Group", "username": "myanime", "is_forum": true, "participants_count": 1204 }
+  ]
+}
+```
+
+### `POST /api/telegram/join`
+Joins a public `@name` or a `t.me/+hash` invite link and describes what it
+joined, so the group can be added in one step. Already being a member counts as
+success.
+
+```json
+{ "invite": "https://t.me/+AbCdEf" }
+```
+```json
+{ "success": true, "chat_id": "-1001234567890", "title": "My Anime Group", "username": null, "is_forum": false, "topics": [] }
+```
+
+### `POST /api/telegram/notify`
+Sends a short note to the account's own Saved Messages — a batch-finished
+report that needs no push service or email.
+
+```json
+{ "text": "12 episodes uploaded to R2." }
 ```
 
 ---

@@ -1,1 +1,0 @@
-"""TG Downloader userbot service."""
