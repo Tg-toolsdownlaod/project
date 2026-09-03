@@ -15,7 +15,7 @@ import {
 } from 'lucide-react';
 import { supabase } from '@/lib/supabase';
 import type { Download, Episode, Group, TelegramSettings } from '@/lib/types';
-import { formatBytes, formatSpeed, formatTimeAgo, getStatusColor } from '@/lib/utils';
+import { formatBytes, formatTimeAgo, getStatusColor } from '@/lib/utils';
 
 interface Stats {
   totalDownloads: number;

@@ -5,6 +5,7 @@ import { DashboardPage } from '@/pages/DashboardPage';
 import { GroupsPage } from '@/pages/GroupsPage';
 import { DownloadsPage } from '@/pages/DownloadsPage';
 import { AutoDownloadPage } from '@/pages/AutoDownloadPage';
+import { ForwardsPage } from '@/pages/ForwardsPage';
 import { UrlListsPage } from '@/pages/UrlListsPage';
 import { R2Page } from '@/pages/R2Page';
 import { TelegramPage } from '@/pages/TelegramPage';
@@ -22,6 +23,7 @@ function App() {
     groups: { title: t('page.groups.title'), subtitle: t('page.groups.subtitle') },
     downloads: { title: t('page.downloads.title'), subtitle: t('page.downloads.subtitle') },
     autodownload: { title: t('page.autodownload.title'), subtitle: t('page.autodownload.subtitle') },
+    forwards: { title: t('page.forwards.title'), subtitle: t('page.forwards.subtitle') },
     urllists: { title: t('page.urllists.title'), subtitle: t('page.urllists.subtitle') },
     r2: { title: t('page.r2.title'), subtitle: t('page.r2.subtitle') },
     telegram: { title: t('page.telegram.title'), subtitle: t('page.telegram.subtitle') },
@@ -36,6 +38,7 @@ function App() {
       case 'groups': return <GroupsPage />;
       case 'downloads': return <DownloadsPage />;
       case 'autodownload': return <AutoDownloadPage />;
+      case 'forwards': return <ForwardsPage />;
       case 'urllists': return <UrlListsPage />;
       case 'r2': return <R2Page />;
       case 'telegram': return <TelegramPage />;

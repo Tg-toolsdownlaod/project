@@ -9,6 +9,7 @@ type TranslationKey =
   | 'nav.groups'
   | 'nav.downloads'
   | 'nav.autodownload'
+  | 'nav.forwards'
   | 'nav.urllists'
   | 'nav.r2'
   | 'nav.telegram'
@@ -25,6 +26,8 @@ type TranslationKey =
   | 'page.downloads.subtitle'
   | 'page.autodownload.title'
   | 'page.autodownload.subtitle'
+  | 'page.forwards.title'
+  | 'page.forwards.subtitle'
   | 'page.urllists.title'
   | 'page.urllists.subtitle'
   | 'page.r2.title'
@@ -40,6 +43,7 @@ const translations: Record<Language, Record<TranslationKey, string>> = {
     'nav.groups': 'Groups & Topics',
     'nav.downloads': 'Download Queue',
     'nav.autodownload': 'Auto Download',
+    'nav.forwards': 'Forward to Group',
     'nav.urllists': 'URL Lists',
     'nav.r2': 'R2 Storage',
     'nav.telegram': 'Telegram',
@@ -51,11 +55,13 @@ const translations: Record<Language, Record<TranslationKey, string>> = {
     'page.dashboard.title': 'Dashboard',
     'page.dashboard.subtitle': 'Overview of your download activity',
     'page.groups.title': 'Groups & Topics',
-    'page.groups.subtitle': 'Manage Telegram groups and browse episodes',
+    'page.groups.subtitle': 'Open a group, pick a topic, then select videos to download or forward',
     'page.downloads.title': 'Download Queue',
     'page.downloads.subtitle': 'Monitor and manage active downloads',
     'page.autodownload.title': 'Auto Download',
     'page.autodownload.subtitle': 'Automatically download new episodes',
+    'page.forwards.title': 'Forward to Group',
+    'page.forwards.subtitle': 'Copy videos from a topic into another Telegram group',
     'page.urllists.title': 'URL Lists',
     'page.urllists.subtitle': 'Organize episode links for batch downloading',
     'page.r2.title': 'R2 Storage',
@@ -70,6 +76,7 @@ const translations: Record<Language, Record<TranslationKey, string>> = {
     'nav.groups': 'ក្រុម និង Topics',
     'nav.downloads': 'ជួរទាញយក',
     'nav.autodownload': 'ទាញយកស្វ័យប្រវត្តិ',
+    'nav.forwards': 'បញ្ជូនទៅក្រុម',
     'nav.urllists': 'បញ្ជី URL',
     'nav.r2': 'ឃ្លាំង R2',
     'nav.telegram': 'តេឡេក្រាម',
@@ -81,11 +88,13 @@ const translations: Record<Language, Record<TranslationKey, string>> = {
     'page.dashboard.title': 'ផ្ទាំងគ្រប់គ្រង',
     'page.dashboard.subtitle': 'ទិដ្ឋភាពទូទៅនៃសកម្មភាពទាញយក',
     'page.groups.title': 'ក្រុម និង Topics',
-    'page.groups.subtitle': 'គ្រប់គ្រងក្រុម Telegram និងរកមើល episode',
+    'page.groups.subtitle': 'ចុចលើក្រុម → topic → ជ្រើសរើសវីដេអូ ដើម្បីទាញយក ឬបញ្ជូនបន្ត',
     'page.downloads.title': 'ជួរទាញយក',
     'page.downloads.subtitle': 'តាមដាន និងគ្រប់គ្រងការទាញយកបច្ចុប្បន្ន',
     'page.autodownload.title': 'ទាញយកស្វ័យប្រវត្តិ',
     'page.autodownload.subtitle': 'ទាញយក episode ថ្មីដោយស្វ័យប្រវត្តិ',
+    'page.forwards.title': 'បញ្ជូនទៅក្រុម',
+    'page.forwards.subtitle': 'ចម្លងវីដេអូពី topic ទៅក្រុម Telegram ថ្មី',
     'page.urllists.title': 'បញ្ជី URL',
     'page.urllists.subtitle': 'រៀបចំ link episode សម្រាប់ទាញយកជាបណ្តុំ',
     'page.r2.title': 'ឃ្លាំង R2',

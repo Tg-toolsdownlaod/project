@@ -9,7 +9,6 @@ import {
   Loader2,
   CheckCircle2,
   Zap,
-  Filter,
   ArrowRight,
 } from 'lucide-react';
 import { supabase } from '@/lib/supabase';

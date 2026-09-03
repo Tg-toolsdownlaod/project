@@ -5,11 +5,10 @@ import {
   Trash2,
   ToggleLeft,
   ToggleRight,
-  Film,
-  RefreshCw,
   Clock,
-  Loader2,
   Sparkles,
+  Send,
+  Hash,
 } from 'lucide-react';
 import { supabase } from '@/lib/supabase';
 import type { AutoDownloadRule, Group, Topic } from '@/lib/types';
@@ -58,6 +57,8 @@ export function AutoDownloadPage() {
     auto_ep_end: number | null;
     quality_filter: string | null;
     min_file_size_mb: number;
+    forward_to_chat_id: string | null;
+    forward_enabled: boolean;
   }) => {
     await supabase.from('auto_download_rules').insert(data);
     setShowAddModal(false);
@@ -150,6 +151,14 @@ export function AutoDownloadPage() {
                   <p className="text-dark-500 text-[10px] mb-0.5">Min File Size</p>
                   <p className="text-white font-medium">{rule.min_file_size_mb} MB</p>
                 </div>
+                {rule.forward_enabled && rule.forward_to_chat_id && (
+                  <div className="bg-accent-500/10 rounded-lg p-2.5 col-span-2">
+                    <p className="text-accent-400/70 text-[10px] mb-0.5 flex items-center gap-1">
+                      <Send className="w-2.5 h-2.5" /> Auto-forward to
+                    </p>
+                    <p className="text-accent-300 font-medium font-mono truncate">{rule.forward_to_chat_id}</p>
+                  </div>
+                )}
                 {rule.quality_filter && (
                   <div className="bg-dark-800/40 rounded-lg p-2.5 col-span-2">
                     <p className="text-dark-500 text-[10px] mb-0.5">Quality Filter</p>
@@ -183,7 +192,7 @@ export function AutoDownloadPage() {
           {[
             { step: '1', title: 'Set Range', desc: 'Define episode range (e.g. EP1-EP100) for each group/topic' },
             { step: '2', title: 'Monitor', desc: 'The bot scans for new episodes matching your criteria' },
-            { step: '3', title: 'Auto Download', desc: 'New episodes are downloaded and uploaded to R2 automatically' },
+            { step: '3', title: 'Download & Forward', desc: 'New episodes go to R2 — and to another group if you set a forward ID' },
           ].map((item) => (
             <div key={item.step} className="bg-dark-800/30 rounded-lg p-4">
               <div className="w-7 h-7 rounded-full bg-primary-500/20 text-primary-400 flex items-center justify-center text-xs font-bold mb-2">
@@ -219,6 +228,8 @@ function AddRuleModal({
     auto_ep_end: number | null;
     quality_filter: string | null;
     min_file_size_mb: number;
+    forward_to_chat_id: string | null;
+    forward_enabled: boolean;
   }) => void;
 }) {
   const [groupId, setGroupId] = useState(groups[0]?.id ?? '');
@@ -227,6 +238,7 @@ function AddRuleModal({
   const [epEnd, setEpEnd] = useState('');
   const [quality, setQuality] = useState('');
   const [minSize, setMinSize] = useState('10');
+  const [forwardChatId, setForwardChatId] = useState('');
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
@@ -238,6 +250,8 @@ function AddRuleModal({
       auto_ep_end: epEnd ? parseInt(epEnd) : null,
       quality_filter: quality || null,
       min_file_size_mb: parseInt(minSize) || 0,
+      forward_to_chat_id: forwardChatId.trim() || null,
+      forward_enabled: Boolean(forwardChatId.trim()),
     });
   };
 
@@ -315,6 +329,23 @@ function AddRuleModal({
               onChange={(e) => setMinSize(e.target.value)}
               className="w-full bg-dark-800 border border-dark-700 rounded-lg px-3 py-2.5 text-sm text-white outline-none focus:border-primary-500 transition-colors"
             />
+          </div>
+          <div>
+            <label className="text-xs text-dark-400 font-medium block mb-1.5 flex items-center gap-1.5">
+              <Send className="w-3 h-3 text-accent-400" /> Auto-forward to Group ID (optional)
+            </label>
+            <div className="relative">
+              <Hash className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-dark-500" />
+              <input
+                value={forwardChatId}
+                onChange={(e) => setForwardChatId(e.target.value)}
+                placeholder="-100xxxxxxxxxx"
+                className="w-full bg-dark-800 border border-dark-700 rounded-lg pl-10 pr-3 py-2.5 text-sm text-white placeholder-dark-600 outline-none focus:border-primary-500 transition-colors font-mono"
+              />
+            </div>
+            <p className="text-[10px] text-dark-500 mt-1.5">
+              Every new episode this rule picks up is also forwarded into that group.
+            </p>
           </div>
           <div className="flex items-center gap-3 pt-2">
             <button type="button" onClick={onClose} className="flex-1 px-4 py-2.5 rounded-lg bg-dark-800 hover:bg-dark-700 text-dark-300 text-sm font-medium transition-colors">

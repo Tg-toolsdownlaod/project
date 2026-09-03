@@ -9,7 +9,6 @@ import {
   RefreshCw,
   Cloud,
   Folder,
-  Zap,
 } from 'lucide-react';
 import { supabase } from '@/lib/supabase';
 import type { DownloadSettings } from '@/lib/types';

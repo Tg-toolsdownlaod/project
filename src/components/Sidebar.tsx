@@ -3,6 +3,7 @@ import {
   Users,
   DownloadCloud,
   Zap,
+  Send as SendIcon,
   Link2,
   Database,
   Send,
@@ -25,16 +26,19 @@ interface SidebarProps {
 export function Sidebar({ currentPage, onNavigate, collapsed }: SidebarProps) {
   const [queueCount, setQueueCount] = useState(0);
   const [activeGroups, setActiveGroups] = useState(0);
+  const [forwardCount, setForwardCount] = useState(0);
   const { language, toggleLanguage, t } = useLanguage();
 
   useEffect(() => {
     (async () => {
-      const [{ count: dlCount }, { count: gCount }] = await Promise.all([
+      const [{ count: dlCount }, { count: gCount }, { count: fwCount }] = await Promise.all([
         supabase.from('downloads').select('*', { count: 'exact', head: true }).in('status', ['queued', 'downloading']),
         supabase.from('groups').select('*', { count: 'exact', head: true }).eq('active', true),
+        supabase.from('forward_jobs').select('*', { count: 'exact', head: true }).in('status', ['queued', 'running']),
       ]);
       setQueueCount(dlCount ?? 0);
       setActiveGroups(gCount ?? 0);
+      setForwardCount(fwCount ?? 0);
     })();
   }, [currentPage]);
 
@@ -43,6 +47,7 @@ export function Sidebar({ currentPage, onNavigate, collapsed }: SidebarProps) {
     { key: 'groups', label: t('nav.groups'), icon: Users, badge: activeGroups },
     { key: 'downloads', label: t('nav.downloads'), icon: DownloadCloud, badge: queueCount },
     { key: 'autodownload', label: t('nav.autodownload'), icon: Zap },
+    { key: 'forwards', label: t('nav.forwards'), icon: SendIcon, badge: forwardCount },
     { key: 'urllists', label: t('nav.urllists'), icon: Link2 },
     { key: 'r2', label: t('nav.r2'), icon: Database },
     { key: 'telegram', label: t('nav.telegram'), icon: Send },
