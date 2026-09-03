@@ -42,14 +42,11 @@ async function execute(jobId) {
       if (groups[0]) sourceEntity = await client.getEntity(normalizeChatId(groups[0].chat_id));
     }
 
-    const items = rows(
-      await db().from("forward_job_items").select("*").eq("job_id", jobId).eq("status", "pending")
-    );
+    const items = await pendingItemsInOrder(jobId);
     let forwarded = job.forwarded_count ?? 0;
     let failed = job.failed_count ?? 0;
 
-    for (const item of items) {
-      const episode = await episodeOf(item);
+    for (const { item, episode } of items) {
       if (!episode?.message_id) {
         await mark(item.id, "skipped", null, "The episode is gone or has no message ID.");
         continue;
@@ -119,10 +116,34 @@ async function forwardOne(client, sourceEntity, target, targetTopic, messageId, 
   await mark(itemId, "forwarded", first?.id ? String(first.id) : null);
 }
 
-async function episodeOf(item) {
-  if (!item.episode_id) return null;
-  const data = rows(await db().from("episodes").select("*").eq("id", item.episode_id).limit(1));
-  return data[0] ?? null;
+/**
+ * The job's pending items paired with their episodes, oldest first.
+ *
+ * Order matters: the destination group ends up in whatever order these are
+ * sent, so a mirror of EP1-EP100 must not arrive shuffled. Episode number
+ * leads (that is what a viewer scrolls by) and the Telegram message id breaks
+ * ties, which is the original posting order. Episodes are fetched in one
+ * query rather than one per item.
+ */
+async function pendingItemsInOrder(jobId) {
+  const items = rows(
+    await db().from("forward_job_items").select("*").eq("job_id", jobId).eq("status", "pending")
+  );
+  const episodeIds = items.map((i) => i.episode_id).filter(Boolean);
+  if (episodeIds.length === 0) return items.map((item) => ({ item, episode: null }));
+
+  const episodes = rows(await db().from("episodes").select("*").in("id", episodeIds));
+  const byId = new Map(episodes.map((e) => [e.id, e]));
+
+  return items
+    .map((item) => ({ item, episode: byId.get(item.episode_id) ?? null }))
+    .sort((a, b) => {
+      // Episodes with no number sort after the numbered ones.
+      const epA = a.episode?.ep_number ?? Number.MAX_SAFE_INTEGER;
+      const epB = b.episode?.ep_number ?? Number.MAX_SAFE_INTEGER;
+      if (epA !== epB) return epA - epB;
+      return Number(a.episode?.message_id ?? 0) - Number(b.episode?.message_id ?? 0);
+    });
 }
 
 async function mark(itemId, status, messageId = null, error = null) {
