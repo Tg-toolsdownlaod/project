@@ -14,6 +14,7 @@ import {
   User,
   Hash,
   AtSign,
+  RotateCcw,
 } from 'lucide-react';
 import { supabase } from '@/lib/supabase';
 import type { TelegramSettings } from '@/lib/types';
@@ -41,8 +42,18 @@ async function callBackend(path: string, body?: Record<string, unknown>) {
   return data;
 }
 
+const EMPTY_SETTINGS: TelegramSettings = {
+  id: '', api_id: '', api_hash: '', phone: '', session_string: '',
+  connected: false, last_connected_at: null,
+  account_first_name: null, account_last_name: null,
+  account_username: null, account_user_id: null,
+  created_at: '', updated_at: '',
+};
+
 export function TelegramPage() {
   const [settings, setSettings] = useState<TelegramSettings | null>(null);
+  // Snapshot of the last saved/loaded credentials — Reset reverts to this.
+  const [savedSettings, setSavedSettings] = useState<TelegramSettings>(EMPTY_SETTINGS);
   const [saving, setSaving] = useState(false);
   const [connected, setConnected] = useState(false);
   const [loading, setLoading] = useState(true);
@@ -60,19 +71,21 @@ export function TelegramPage() {
         setError('Could not load Telegram settings. Please refresh and try again.');
       } else if (data) {
         setSettings(data as TelegramSettings);
+        setSavedSettings(data as TelegramSettings);
         setConnected((data as TelegramSettings).connected);
       } else {
-        setSettings({
-          id: '', api_id: '', api_hash: '', phone: '', session_string: '',
-          connected: false, last_connected_at: null,
-          account_first_name: null, account_last_name: null,
-          account_username: null, account_user_id: null,
-          created_at: '', updated_at: '',
-        });
+        setSettings(EMPTY_SETTINGS);
+        setSavedSettings(EMPTY_SETTINGS);
       }
       setLoading(false);
     })();
   }, []);
+
+  const isDirty = !!settings && (
+    (settings.api_id || '') !== (savedSettings.api_id || '') ||
+    (settings.api_hash || '') !== (savedSettings.api_hash || '') ||
+    (settings.phone || '') !== (savedSettings.phone || '')
+  );
 
   const handleSave = async () => {
     if (!settings) return;
@@ -92,10 +105,21 @@ export function TelegramPage() {
 
     if (result.error) {
       setError('Could not save Telegram credentials. Please try again.');
-    } else if (!settings.id && result.data) {
-      setSettings({ ...settings, id: (result.data as TelegramSettings).id });
+    } else {
+      const updated = !settings.id && result.data
+        ? { ...settings, id: (result.data as TelegramSettings).id }
+        : settings;
+      setSettings(updated);
+      setSavedSettings(updated);
     }
     setSaving(false);
+  };
+
+  // Discards unsaved edits and reverts the form to the last saved credentials
+  // (or a blank form if nothing has been saved yet). Does not touch the DB.
+  const handleReset = () => {
+    setError('');
+    setSettings(savedSettings);
   };
 
   const handleConnect = async () => {
@@ -213,10 +237,17 @@ export function TelegramPage() {
       </div>
 
       {/* API Credentials */}
-      <div className="rounded-xl border border-dark-800 bg-dark-900/60 p-5">
-        <h3 className="text-sm font-semibold text-white mb-4 flex items-center gap-2">
-          <Key className="w-4 h-4 text-primary-400" /> API Credentials
-        </h3>
+      <div className={`rounded-xl border p-5 transition-colors ${isDirty ? 'border-warning-500/30 bg-dark-900/60' : 'border-dark-800 bg-dark-900/60'}`}>
+        <div className="flex items-center justify-between mb-4">
+          <h3 className="text-sm font-semibold text-white flex items-center gap-2">
+            <Key className="w-4 h-4 text-primary-400" /> API Credentials
+          </h3>
+          {isDirty && (
+            <span className="text-[10px] text-warning-400 font-medium px-2 py-0.5 rounded-full bg-warning-500/10 border border-warning-500/20">
+              Unsaved
+            </span>
+          )}
+        </div>
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
           <div>
             <label className="text-xs text-dark-400 font-medium block mb-1.5">API ID</label>
@@ -255,11 +286,24 @@ export function TelegramPage() {
         <div className="flex items-center gap-3 mt-5">
           <button
             onClick={handleSave}
-            disabled={saving}
+            disabled={saving || !isDirty}
             className="flex items-center gap-2 px-4 py-2.5 rounded-lg bg-primary-500 hover:bg-primary-600 text-white text-sm font-medium transition-colors disabled:opacity-50"
           >
             {saving ? <Loader2 className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4" />} Save Credentials
           </button>
+          <button
+            onClick={handleReset}
+            disabled={saving || !isDirty}
+            title="Discard unsaved changes and revert to the last saved credentials"
+            className="flex items-center gap-2 px-4 py-2.5 rounded-lg bg-dark-800 hover:bg-dark-700 text-dark-300 hover:text-white text-sm font-medium transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+          >
+            <RotateCcw className="w-4 h-4" /> Reset
+          </button>
+          {isDirty && (
+            <span className="text-[11px] text-warning-400 flex items-center gap-1.5">
+              <AlertTriangle className="w-3 h-3" /> Unsaved changes
+            </span>
+          )}
         </div>
       </div>
 

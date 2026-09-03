@@ -126,7 +126,11 @@ export function GroupsPage() {
     }
   };
 
-  const handleDeleteGroup = async (id: string) => {
+  const handleDeleteGroup = async (id: string, title: string) => {
+    const confirmed = window.confirm(
+      `Remove "${title}"? This deletes the group and its scanned topics/episodes from this app (it does not affect the Telegram group itself).`
+    );
+    if (!confirmed) return;
     await supabase.from('groups').delete().eq('id', id);
     if (selectedGroup === id) {
       setSelectedGroup(null);
@@ -220,7 +224,8 @@ export function GroupsPage() {
                         <span className="text-[9px] text-accent-400 bg-accent-500/10 px-1.5 py-0.5 rounded font-medium">FORUM</span>
                       )}
                       <button
-                        onClick={(e) => { e.stopPropagation(); handleDeleteGroup(group.id); }}
+                        onClick={(e) => { e.stopPropagation(); handleDeleteGroup(group.id, group.title); }}
+                        title="Remove group"
                         className="p-1 rounded hover:bg-error-500/20 text-dark-600 hover:text-error-400 transition-colors"
                       >
                         <Trash2 className="w-3.5 h-3.5" />
