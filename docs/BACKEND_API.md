@@ -117,6 +117,22 @@ report that needs no push service or email.
 
 ---
 
+### Resolving a chat ID, invite link, or deep link
+
+`resolve`, `join`, and any other endpoint that takes a chat identifier accept
+more than a bare `-100...` id:
+
+- `@name` or a bare `name`
+- `https://t.me/name` or `https://t.me/name/42` (a link to one message)
+- `https://t.me/c/<internal id>` or `.../42` — a private chat with no
+  username
+- `tg://resolve?domain=name&post=42`
+- `tg://privatepost?channel=<internal id>&post=42`
+
+An invite link (`t.me/+...` or `t.me/joinchat/...`) is rejected by `resolve`
+with a clear error telling the caller to use `join` instead — it names a
+link to accept, not a chat to look up.
+
 ## Downloads
 
 ### `POST /api/downloads/{download_id}/start`
@@ -183,6 +199,33 @@ copied stay in the destination.
 | `auto` | Forward first; re-upload only when Telegram refuses (`CHAT_FORWARDS_RESTRICTED` and friends). The default. |
 
 ---
+
+### `POST /api/telegram/takeout/start`
+Starts Telegram's own Takeout (bulk-export) mode. While active, every request
+this process makes — scans, downloads, forwards — is transparently wrapped so
+it runs under Telegram's relaxed export limits instead of the normal ones.
+
+This is not a plain "go faster" switch. The **first** time an account starts
+a takeout session, Telegram notifies its other signed-in devices and waits
+for a confirmation there; if none arrives, it refuses with
+`TAKEOUT_INIT_DELAY_<seconds>` and the account must wait that long before
+trying again. This endpoint surfaces that as a normal `{success: false,
+error}` naming the wait in hours, not a generic failure.
+
+```json
+{ "success": true, "takeout_id": "123456789" }
+```
+```json
+{ "success": false, "error": "Telegram needs this confirmed from another signed-in device (check your phone for a prompt), or the account has to wait about 24h before a takeout session can start." }
+```
+
+### `POST /api/telegram/takeout/stop`
+Ends the session; every request after this goes back to normal limits.
+Optional body: `{ "success": true }` (default) tells Telegram the export
+completed; `false` marks it abandoned.
+
+`GET /health` reports `takeout: true/false` so the frontend can show whether
+a session is currently active.
 
 ## Storage
 

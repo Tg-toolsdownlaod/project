@@ -15,9 +15,10 @@ import {
   Hash,
   AtSign,
   RotateCcw,
+  PackageOpen,
 } from 'lucide-react';
 import { supabase } from '@/lib/supabase';
-import { callBackend } from '@/lib/backend';
+import { callBackend, checkHealth, startTakeout, stopTakeout } from '@/lib/backend';
 import type { TelegramSettings } from '@/lib/types';
 import { formatTimeAgo } from '@/lib/utils';
 
@@ -42,6 +43,51 @@ export function TelegramPage() {
   const [needsPassword, setNeedsPassword] = useState(false);
   const [code, setCode] = useState('');
   const [password, setPassword] = useState('');
+
+  const [takeoutActive, setTakeoutActive] = useState(false);
+  const [takeoutBusy, setTakeoutBusy] = useState(false);
+  const [takeoutError, setTakeoutError] = useState('');
+  const [takeoutNotice, setTakeoutNotice] = useState('');
+
+  useEffect(() => {
+    checkHealth()
+      .then((health) => setTakeoutActive(health.takeout))
+      .catch(() => {
+        /* Backend unreachable — leave it as not active rather than guessing. */
+      });
+  }, []);
+
+  const handleStartTakeout = async () => {
+    setTakeoutBusy(true);
+    setTakeoutError('');
+    setTakeoutNotice('');
+    try {
+      const result = await startTakeout();
+      setTakeoutActive(true);
+      setTakeoutNotice(
+        result.already_active
+          ? 'A takeout session was already running.'
+          : 'Takeout session started — downloads, scans and forwards now run under relaxed limits.'
+      );
+    } catch (err) {
+      setTakeoutError(err instanceof Error ? err.message : 'Could not start the takeout session.');
+    }
+    setTakeoutBusy(false);
+  };
+
+  const handleStopTakeout = async () => {
+    setTakeoutBusy(true);
+    setTakeoutError('');
+    setTakeoutNotice('');
+    try {
+      await stopTakeout(true);
+      setTakeoutActive(false);
+      setTakeoutNotice('Takeout session ended — back to normal limits.');
+    } catch (err) {
+      setTakeoutError(err instanceof Error ? err.message : 'Could not stop the takeout session.');
+    }
+    setTakeoutBusy(false);
+  };
 
   useEffect(() => {
     (async () => {
@@ -408,6 +454,65 @@ export function TelegramPage() {
               <p className="text-sm text-white font-medium">{formatTimeAgo(settings?.last_connected_at ?? null)}</p>
             </div>
           </div>
+        </div>
+      )}
+
+      {/* Takeout mode — advanced, off by default */}
+      {connected && (
+        <div className="rounded-xl border border-dark-800 bg-dark-900/60 p-5">
+          <div className="flex items-start justify-between gap-3 mb-3">
+            <h3 className="text-sm font-semibold text-white flex items-center gap-2">
+              <PackageOpen className="w-4 h-4 text-accent-400" /> Takeout mode
+              <span className="text-[10px] font-normal text-dark-500">(advanced)</span>
+            </h3>
+            <span className={`flex items-center gap-1.5 px-2 py-1 rounded-lg text-[11px] font-medium shrink-0 ${
+              takeoutActive ? 'bg-primary-500/15 text-primary-400' : 'bg-dark-800 text-dark-500'
+            }`}>
+              <span className={`w-1.5 h-1.5 rounded-full ${takeoutActive ? 'bg-primary-400 animate-pulse' : 'bg-dark-600'}`} />
+              {takeoutActive ? 'Active' : 'Off'}
+            </span>
+          </div>
+
+          <p className="text-xs text-dark-400 leading-relaxed mb-3">
+            Telegram's own bulk-export mode. While active, scans, downloads and forwards from this
+            service run under Telegram's relaxed rate limits instead of the normal ones. It is{' '}
+            <span className="text-white font-medium">not a guaranteed speed boost</span> — Telegram
+            enforces this server-side, not this app.
+          </p>
+
+          <div className="flex items-start gap-2 mb-4 p-3 rounded-lg bg-warning-500/10 border border-warning-500/20">
+            <AlertTriangle className="w-4 h-4 text-warning-400 shrink-0 mt-0.5" />
+            <p className="text-xs text-warning-300 leading-relaxed">
+              The first time this is turned on, Telegram notifies your other signed-in devices
+              (check your phone) and waits for confirmation there — or, if nothing confirms it,
+              refuses for up to 24 hours before it can be tried again. This is Telegram's own
+              security check, not something this app can skip.
+            </p>
+          </div>
+
+          {takeoutError && (
+            <p className="text-xs text-error-400 mb-3 flex items-start gap-1.5">
+              <XCircle className="w-3.5 h-3.5 shrink-0 mt-0.5" /> {takeoutError}
+            </p>
+          )}
+          {takeoutNotice && (
+            <p className="text-xs text-success-400 mb-3 flex items-start gap-1.5">
+              <CheckCircle2 className="w-3.5 h-3.5 shrink-0 mt-0.5" /> {takeoutNotice}
+            </p>
+          )}
+
+          <button
+            onClick={takeoutActive ? handleStopTakeout : handleStartTakeout}
+            disabled={takeoutBusy}
+            className={`flex items-center gap-2 px-4 py-2.5 rounded-lg text-sm font-medium transition-colors disabled:opacity-50 ${
+              takeoutActive
+                ? 'bg-dark-800 hover:bg-error-500 text-dark-300 hover:text-white'
+                : 'bg-dark-800 hover:bg-primary-500 text-dark-300 hover:text-white'
+            }`}
+          >
+            {takeoutBusy ? <Loader2 className="w-4 h-4 animate-spin" /> : <PackageOpen className="w-4 h-4" />}
+            {takeoutActive ? 'Stop takeout session' : 'Start takeout session'}
+          </button>
         </div>
       )}
 

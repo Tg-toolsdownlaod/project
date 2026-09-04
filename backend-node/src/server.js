@@ -12,6 +12,7 @@ import { db, nowIso, upsertSingle } from "./db.js";
 import { applyAutoRules, retryFailed, runDownload } from "./downloader.js";
 import * as forwarder from "./forwarder.js";
 import * as mirror from "./mirror.js";
+import * as takeout from "./takeout.js";
 import * as r2 from "./r2.js";
 import { scanGroup } from "./scanner.js";
 import * as telegram from "./telegram.js";
@@ -58,6 +59,7 @@ app.get(
       success: true,
       telegram: await telegram.isAuthorized(),
       r2: await r2.ping(),
+      takeout: takeout.isTakeoutActive(),
     });
   })
 );
@@ -226,6 +228,18 @@ app.post(
       .eq("id", req.params.mirrorId);
     res.json({ success: true });
   })
+);
+
+app.post(
+  "/api/telegram/takeout/start",
+  requireApiKey,
+  route(async (_req, res) => res.json(await takeout.startTakeoutSession()))
+);
+
+app.post(
+  "/api/telegram/takeout/stop",
+  requireApiKey,
+  route(async (req, res) => res.json(await takeout.stopTakeoutSession(req.body?.success ?? true)))
 );
 
 // ---------------------------------------------------------------- r2
