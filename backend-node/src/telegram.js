@@ -22,6 +22,10 @@ export async function getClient({ requireAuth = true } = {}) {
       conf.apiHash,
       {
         connectionRetries: 5,
+        // teleproto sleeps out any FLOOD_WAIT at or under this threshold
+        // automatically, for every API call -- not just the ones
+        // floodRetry.js wraps. Its own default is 60s; config.js raises it.
+        floodSleepThreshold: config.floodSleepThresholdSeconds,
         // 0 (the default) leaves teleproto's own auto-scaling in place, which
         // already opens up to 8 parallel connections per download and grows
         // the transfer window on its own -- see config.js for why this is

@@ -183,6 +183,13 @@ does, and why that is close to the practical ceiling:
   not a hard limit — it exists to trigger fewer flood waits in the first
   place. Lowering it trades some safety margin for speed; it does not change
   what Telegram allows.
+- **`TELEGRAM_FLOOD_SLEEP_THRESHOLD` (default 300s) covers everything else.**
+  teleproto sleeps out any `FLOOD_WAIT` at or under this threshold
+  automatically, silently, for every single call the client makes — scanning,
+  entity lookups, joins, not just downloads and forwards. The library's own
+  default is a conservative 60s; raising it gives that blanket coverage to
+  the calls `floodRetry.js` never touches. The library caps it at 24h either
+  way, so this can't be set to something that hangs forever.
 - **Scanning reads at most 3000 messages per call** — pass `{"limit": N}` to
   the scan endpoint for deeper history; this is a request-size choice, not a
   rate limit.

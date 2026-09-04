@@ -252,10 +252,15 @@ service reads on boot (`backend-node/.env.example`):
 | `MAX_CONCURRENT_DOWNLOADS` | unset (uses `download_settings.concurrent_downloads`, default 3) | No hardcoded ceiling — raise it as high as the host's CPU/disk/network allow. |
 | `TELEGRAM_MAX_DOWNLOAD_SESSIONS` | unset (library default: up to 8, auto-scaling) | Raises the per-file parallel-connection ceiling teleproto already uses. |
 | `FORWARD_PAUSE_MS` | 1500 | Courtesy gap between forwards, to trigger fewer flood waits. Not a hard limit. |
+| `TELEGRAM_FLOOD_SLEEP_THRESHOLD` | 300 | Seconds: teleproto itself sleeps out any `FLOOD_WAIT` at or under this, silently, for **every** call the client makes — not just downloads and forwards. The library's own default is 60s. |
 
-Every download and forward call is wrapped so a real `FLOOD_WAIT` from
-Telegram is waited out in full and retried automatically (up to 6 attempts)
-rather than counted as a failure. There is no way to disable Telegram's own
+Two layers handle `FLOOD_WAIT`, covering different scopes. teleproto sleeps
+out anything at or under `TELEGRAM_FLOOD_SLEEP_THRESHOLD` automatically for
+every single API call (scanning, entity lookups, joins, all of it).
+`floodRetry.js` additionally wraps the specific download and forward calls so
+that even a wait *above* that threshold is honored in full and retried (up to
+6 attempts) rather than counted as a failure. Together: nothing here treats a
+real `FLOOD_WAIT` as an error, but there is no way to disable Telegram's own
 per-account throttle — see `backend-node/README.md` § *Speed and limits* for
 the honest version of what "as fast as possible" means here.
 
