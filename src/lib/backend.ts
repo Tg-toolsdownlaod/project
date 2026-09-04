@@ -74,6 +74,7 @@ export function testR2Connection() {
 export interface BackendHealth {
   telegram: boolean;
   r2: boolean;
+  takeout: boolean;
 }
 
 /**
@@ -85,7 +86,11 @@ export async function checkHealth(): Promise<BackendHealth> {
   const res = await fetch(`${BACKEND_URL}/health`);
   if (!res.ok) throw new Error('The userbot service did not respond.');
   const data = await res.json();
-  return { telegram: Boolean(data.telegram), r2: Boolean(data.r2) };
+  return {
+    telegram: Boolean(data.telegram),
+    r2: Boolean(data.r2),
+    takeout: Boolean(data.takeout),
+  };
 }
 
 /** Lists the groups the userbot is a member of, so a chat ID need not be typed. */
@@ -119,4 +124,27 @@ export function prepareMirror(mirrorId: string) {
 /** Stops a mirror and every job it spawned. */
 export function cancelMirror(mirrorId: string) {
   return callBackend(`/api/telegram/mirror/${mirrorId}/cancel`);
+}
+
+export interface TakeoutResult {
+  success: boolean;
+  already_active?: boolean;
+  was_active?: boolean;
+  takeout_id?: string;
+}
+
+/**
+ * Starts Telegram's Takeout mode: an official bulk-export session that
+ * relaxes flood limits, at the cost of needing a one-time confirmation from
+ * another signed-in device (or a wait Telegram itself imposes) the first
+ * time it's used. See Settings › Telegram for the full explanation shown to
+ * the operator before they turn this on.
+ */
+export function startTakeout() {
+  return callBackend<TakeoutResult>('/api/telegram/takeout/start');
+}
+
+/** Ends the active takeout session; downloads and forwards go back to normal. */
+export function stopTakeout(success = true) {
+  return callBackend<TakeoutResult>('/api/telegram/takeout/stop', { success });
 }

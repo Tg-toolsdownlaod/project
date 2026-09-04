@@ -139,13 +139,75 @@ export async function logout() {
   return { success: true };
 }
 
-/** Accepts -100..., a bare id, @name or a t.me link and returns what the client wants. */
-export function normalizeChatId(chatId) {
-  let value = String(chatId ?? "").trim();
+// Matches t.me and telegram.me links with or without a scheme/www.
+const TME_HOST = /^(?:https?:\/\/)?(?:www\.)?(?:t\.me|telegram\.me)\//i;
+
+/**
+ * Extracts a chat identifier -- and a message id, when the link points at one
+ * specific message -- from any form Telegram hands out: a bare "-100...", a
+ * "@name", "t.me/name", "t.me/name/42", "t.me/c/<internal id>[/42]" (a
+ * private chat with no username), or a "tg://resolve" / "tg://privatepost"
+ * deep link. The message id is not used everywhere yet, but callers that only
+ * need the chat can keep calling {@link normalizeChatId}.
+ */
+export function parseTelegramLink(input) {
+  const value = String(input ?? "").trim();
   if (!value) throw new Error("A chat ID is required.");
-  if (value.startsWith("https://t.me/")) value = "@" + value.split("/").pop();
-  if (value.startsWith("@")) return value;
-  return /^-?\d+$/.test(value) ? Number(value) : value;
+
+  if (/^tg:\/\/resolve/i.test(value)) {
+    const params = new URL(value.replace(/^tg:\/\//i, "https://tg/")).searchParams;
+    const domain = params.get("domain");
+    if (!domain) throw new Error("This tg:// link has no domain.");
+    const post = params.get("post");
+    return { chatId: `@${domain}`, messageId: post ? Number(post) : null };
+  }
+
+  if (/^tg:\/\/privatepost/i.test(value)) {
+    const params = new URL(value.replace(/^tg:\/\//i, "https://tg/")).searchParams;
+    const channel = params.get("channel");
+    if (!channel) throw new Error("This tg:// link has no channel id.");
+    const post = params.get("post");
+    return { chatId: Number(`-100${channel}`), messageId: post ? Number(post) : null };
+  }
+
+  if (TME_HOST.test(value)) {
+    const path = value.replace(TME_HOST, "").replace(/^\/+/, "");
+
+    if (/^\+|^joinchat\//.test(path)) {
+      throw new Error('This is an invite link — use "Invite link" to join it first, not a chat ID.');
+    }
+
+    // t.me/c/<internal id>[/<message id>] -- a private chat with no username.
+    const privateMatch = path.match(/^c\/(\d+)(?:\/(\d+))?/);
+    if (privateMatch) {
+      return {
+        chatId: Number(`-100${privateMatch[1]}`),
+        messageId: privateMatch[2] ? Number(privateMatch[2]) : null,
+      };
+    }
+
+    // t.me/<username>[/<message id>]
+    const publicMatch = path.match(/^([A-Za-z0-9_]+)(?:\/(\d+))?/);
+    if (publicMatch) {
+      return {
+        chatId: `@${publicMatch[1]}`,
+        messageId: publicMatch[2] ? Number(publicMatch[2]) : null,
+      };
+    }
+
+    throw new Error("Could not read a chat from this t.me link.");
+  }
+
+  if (value.startsWith("@")) return { chatId: value, messageId: null };
+  if (/^-?\d+$/.test(value)) return { chatId: Number(value), messageId: null };
+
+  // A bare username with neither an "@" nor a link wrapper.
+  return { chatId: `@${value}`, messageId: null };
+}
+
+/** Accepts -100..., a bare id, @name, a t.me link or a tg:// deep link. */
+export function normalizeChatId(chatId) {
+  return parseTelegramLink(chatId).chatId;
 }
 
 /** Reads the forum topics of a group, paging until Telegram stops sending more. */
