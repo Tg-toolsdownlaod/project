@@ -41,6 +41,13 @@ export const config = {
   // under Telegram's flood limits. Any FLOOD_WAIT Telegram actually returns is
   // honored in full regardless of this value -- see floodRetry.js.
   forwardPauseMs: int("FORWARD_PAUSE_MS", 1500),
+  // teleproto itself already sleeps out any FLOOD_WAIT at or under this many
+  // seconds, transparently, for every single API call the client makes --
+  // not just the ones floodRetry.js wraps. Its own default is a conservative
+  // 60s; raising it here gives that blanket coverage to scanning, entity
+  // lookups and everything else, while floodRetry.js still catches the rarer
+  // waits that land above it (for the download/forward calls it wraps).
+  floodSleepThresholdSeconds: int("TELEGRAM_FLOOD_SLEEP_THRESHOLD", 300),
   // Default per platform, so Windows does not end up with a stray C:\tmp.
   downloadDir: str("DOWNLOAD_DIR") || path.join(os.tmpdir(), "tg-downloads"),
 };
