@@ -21,3 +21,12 @@ dist-ssr
 *.sln
 *.sw?
 .env
+
+# Python (backend)
+__pycache__/
+*.py[cod]
+.venv
+venv/
+
+# Node backend
+backend-node/node_modules

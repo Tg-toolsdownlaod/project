@@ -17,30 +17,9 @@ import {
   RotateCcw,
 } from 'lucide-react';
 import { supabase } from '@/lib/supabase';
+import { callBackend } from '@/lib/backend';
 import type { TelegramSettings } from '@/lib/types';
 import { formatTimeAgo } from '@/lib/utils';
-
-const BACKEND_URL = import.meta.env.VITE_TELEGRAM_BACKEND_URL as string | undefined;
-const BACKEND_KEY = import.meta.env.VITE_TELEGRAM_BACKEND_KEY as string | undefined;
-
-async function callBackend(path: string, body?: Record<string, unknown>) {
-  if (!BACKEND_URL) {
-    throw new Error('Backend URL is not configured (VITE_TELEGRAM_BACKEND_URL).');
-  }
-  const res = await fetch(`${BACKEND_URL}${path}`, {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      'x-api-key': BACKEND_KEY || '',
-    },
-    body: JSON.stringify(body || {}),
-  });
-  const data = await res.json().catch(() => ({}));
-  if (!res.ok || data.success === false) {
-    throw new Error(data.error || 'Request to backend failed.');
-  }
-  return data;
-}
 
 const EMPTY_SETTINGS: TelegramSettings = {
   id: '', api_id: '', api_hash: '', phone: '', session_string: '',

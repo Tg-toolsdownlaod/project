@@ -4,98 +4,109 @@ export type Language = 'en' | 'km';
 
 const STORAGE_KEY = 'tg-downloader-language';
 
-type TranslationKey =
-  | 'nav.dashboard'
-  | 'nav.groups'
-  | 'nav.downloads'
-  | 'nav.autodownload'
-  | 'nav.urllists'
-  | 'nav.r2'
-  | 'nav.telegram'
-  | 'nav.settings'
-  | 'nav.systemStatus'
-  | 'nav.online'
-  | 'nav.appName'
-  | 'nav.appTagline'
-  | 'page.dashboard.title'
-  | 'page.dashboard.subtitle'
-  | 'page.groups.title'
-  | 'page.groups.subtitle'
-  | 'page.downloads.title'
-  | 'page.downloads.subtitle'
-  | 'page.autodownload.title'
-  | 'page.autodownload.subtitle'
-  | 'page.urllists.title'
-  | 'page.urllists.subtitle'
-  | 'page.r2.title'
-  | 'page.r2.subtitle'
-  | 'page.telegram.title'
-  | 'page.telegram.subtitle'
-  | 'page.settings.title'
-  | 'page.settings.subtitle';
+const en = {
+  'nav.dashboard': 'Dashboard',
+  'nav.groups': 'Groups & Topics',
+  'nav.downloads': 'Downloads',
+  'nav.automation': 'Automation',
+  'nav.urllists': 'Link Lists',
+  'nav.settings': 'Settings',
+  'nav.guide': 'How to use',
+  'nav.systemStatus': 'System Status',
+  'nav.online': 'Online',
+  'nav.offline': 'Not connected',
+  'nav.appName': 'TG Downloader',
+  'nav.appTagline': 'Telegram video toolkit',
 
-const translations: Record<Language, Record<TranslationKey, string>> = {
-  en: {
-    'nav.dashboard': 'Dashboard',
-    'nav.groups': 'Groups & Topics',
-    'nav.downloads': 'Download Queue',
-    'nav.autodownload': 'Auto Download',
-    'nav.urllists': 'URL Lists',
-    'nav.r2': 'R2 Storage',
-    'nav.telegram': 'Telegram',
-    'nav.settings': 'Settings',
-    'nav.systemStatus': 'System Status',
-    'nav.online': 'Online',
-    'nav.appName': 'TG Downloader',
-    'nav.appTagline': 'Video Extractor Pro',
-    'page.dashboard.title': 'Dashboard',
-    'page.dashboard.subtitle': 'Overview of your download activity',
-    'page.groups.title': 'Groups & Topics',
-    'page.groups.subtitle': 'Manage Telegram groups and browse episodes',
-    'page.downloads.title': 'Download Queue',
-    'page.downloads.subtitle': 'Monitor and manage active downloads',
-    'page.autodownload.title': 'Auto Download',
-    'page.autodownload.subtitle': 'Automatically download new episodes',
-    'page.urllists.title': 'URL Lists',
-    'page.urllists.subtitle': 'Organize episode links for batch downloading',
-    'page.r2.title': 'R2 Storage',
-    'page.r2.subtitle': 'Cloudflare R2 configuration and files',
-    'page.telegram.title': 'Telegram',
-    'page.telegram.subtitle': 'Userbot connection and credentials',
-    'page.settings.title': 'Settings',
-    'page.settings.subtitle': 'Download preferences and configuration',
-  },
-  km: {
-    'nav.dashboard': 'ផ្ទាំងគ្រប់គ្រង',
-    'nav.groups': 'ក្រុម និង Topics',
-    'nav.downloads': 'ជួរទាញយក',
-    'nav.autodownload': 'ទាញយកស្វ័យប្រវត្តិ',
-    'nav.urllists': 'បញ្ជី URL',
-    'nav.r2': 'ឃ្លាំង R2',
-    'nav.telegram': 'តេឡេក្រាម',
-    'nav.settings': 'ការកំណត់',
-    'nav.systemStatus': 'ស្ថានភាពប្រព័ន្ធ',
-    'nav.online': 'កំពុងដំណើរការ',
-    'nav.appName': 'TG Downloader',
-    'nav.appTagline': 'កម្មវិធីទាញយកវីដេអូ',
-    'page.dashboard.title': 'ផ្ទាំងគ្រប់គ្រង',
-    'page.dashboard.subtitle': 'ទិដ្ឋភាពទូទៅនៃសកម្មភាពទាញយក',
-    'page.groups.title': 'ក្រុម និង Topics',
-    'page.groups.subtitle': 'គ្រប់គ្រងក្រុម Telegram និងរកមើល episode',
-    'page.downloads.title': 'ជួរទាញយក',
-    'page.downloads.subtitle': 'តាមដាន និងគ្រប់គ្រងការទាញយកបច្ចុប្បន្ន',
-    'page.autodownload.title': 'ទាញយកស្វ័យប្រវត្តិ',
-    'page.autodownload.subtitle': 'ទាញយក episode ថ្មីដោយស្វ័យប្រវត្តិ',
-    'page.urllists.title': 'បញ្ជី URL',
-    'page.urllists.subtitle': 'រៀបចំ link episode សម្រាប់ទាញយកជាបណ្តុំ',
-    'page.r2.title': 'ឃ្លាំង R2',
-    'page.r2.subtitle': 'ការកំណត់ និងឯកសារ Cloudflare R2',
-    'page.telegram.title': 'តេឡេក្រាម',
-    'page.telegram.subtitle': 'ការភ្ជាប់ userbot និង credentials',
-    'page.settings.title': 'ការកំណត់',
-    'page.settings.subtitle': 'ចំណូលចិត្ត និងការកំណត់ការទាញយក',
-  },
+  'page.dashboard.title': 'Dashboard',
+  'page.dashboard.subtitle': 'Everything at a glance',
+  'page.groups.title': 'Groups & Topics',
+  'page.groups.subtitle': 'Open a group, pick a topic, then select videos to download or forward',
+  'page.downloads.title': 'Downloads',
+  'page.downloads.subtitle': 'Monitor and manage the download queue',
+  'page.automation.title': 'Automation',
+  'page.automation.subtitle': 'Auto-download rules and forwarding jobs',
+  'page.urllists.title': 'Link Lists',
+  'page.urllists.subtitle': 'Organise episode links for batch downloading',
+  'page.settings.title': 'Settings',
+  'page.settings.subtitle': 'Connections, downloads and appearance',
+  'page.guide.title': 'How to use',
+  'page.guide.subtitle': 'From connecting Telegram to forwarding a whole topic',
+
+  'theme.appearance': 'Appearance',
+  'theme.accent': 'Accent colour',
+  'theme.light': 'Light',
+  'theme.dark': 'Dark',
+  'theme.system': 'System',
+
+  'tab.rules': 'Auto-download rules',
+  'tab.forwards': 'Forward jobs',
+  'tab.telegram': 'Telegram',
+  'tab.r2': 'R2 Storage',
+  'tab.downloads': 'Downloads',
+  'tab.appearance': 'Appearance',
+
+  'status.telegram': 'Telegram',
+  'status.r2': 'R2 Storage',
+  'status.backend': 'Userbot service',
+  'status.connected': 'Connected',
+  'status.disconnected': 'Disconnected',
+  'status.checking': 'Checking…',
 };
+
+type TranslationKey = keyof typeof en;
+
+const km: Record<TranslationKey, string> = {
+  'nav.dashboard': 'ផ្ទាំងគ្រប់គ្រង',
+  'nav.groups': 'ក្រុម និង Topics',
+  'nav.downloads': 'ការទាញយក',
+  'nav.automation': 'ស្វ័យប្រវត្តិកម្ម',
+  'nav.urllists': 'បញ្ជីតំណ',
+  'nav.settings': 'ការកំណត់',
+  'nav.guide': 'របៀបប្រើប្រាស់',
+  'nav.systemStatus': 'ស្ថានភាពប្រព័ន្ធ',
+  'nav.online': 'កំពុងដំណើរការ',
+  'nav.offline': 'មិនទាន់ភ្ជាប់',
+  'nav.appName': 'TG Downloader',
+  'nav.appTagline': 'ឧបករណ៍វីដេអូ Telegram',
+
+  'page.dashboard.title': 'ផ្ទាំងគ្រប់គ្រង',
+  'page.dashboard.subtitle': 'មើលទិដ្ឋភាពទាំងអស់ក្នុងមួយភ្លែត',
+  'page.groups.title': 'ក្រុម និង Topics',
+  'page.groups.subtitle': 'ចុចលើក្រុម → topic → ជ្រើសរើសវីដេអូ ដើម្បីទាញយក ឬបញ្ជូនបន្ត',
+  'page.downloads.title': 'ការទាញយក',
+  'page.downloads.subtitle': 'តាមដាន និងគ្រប់គ្រងជួរទាញយក',
+  'page.automation.title': 'ស្វ័យប្រវត្តិកម្ម',
+  'page.automation.subtitle': 'ច្បាប់ទាញយកស្វ័យប្រវត្តិ និងការបញ្ជូនបន្ត',
+  'page.urllists.title': 'បញ្ជីតំណ',
+  'page.urllists.subtitle': 'រៀបចំតំណ episode សម្រាប់ទាញយកជាបណ្តុំ',
+  'page.settings.title': 'ការកំណត់',
+  'page.settings.subtitle': 'ការភ្ជាប់ ការទាញយក និងរូបរាង',
+  'page.guide.title': 'របៀបប្រើប្រាស់',
+  'page.guide.subtitle': 'ចាប់ពីភ្ជាប់ Telegram រហូតដល់បញ្ជូន topic ទាំងមូល',
+
+  'theme.appearance': 'រូបរាង',
+  'theme.accent': 'ពណ៌សំខាន់',
+  'theme.light': 'ភ្លឺ',
+  'theme.dark': 'ងងឹត',
+  'theme.system': 'តាមប្រព័ន្ធ',
+
+  'tab.rules': 'ច្បាប់ទាញយកស្វ័យប្រវត្តិ',
+  'tab.forwards': 'ការបញ្ជូនបន្ត',
+  'tab.telegram': 'Telegram',
+  'tab.r2': 'ឃ្លាំង R2',
+  'tab.downloads': 'ការទាញយក',
+  'tab.appearance': 'រូបរាង',
+
+  'status.telegram': 'Telegram',
+  'status.r2': 'ឃ្លាំង R2',
+  'status.backend': 'សេវា Userbot',
+  'status.connected': 'បានភ្ជាប់',
+  'status.disconnected': 'មិនបានភ្ជាប់',
+  'status.checking': 'កំពុងពិនិត្យ…',
+};
+
+const translations: Record<Language, Record<TranslationKey, string>> = { en, km };
 
 interface LanguageContextValue {
   language: Language;

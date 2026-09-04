@@ -1,20 +1,20 @@
+import { useEffect, useState } from 'react';
 import {
-  LayoutDashboard,
-  Users,
+  BookOpen,
   DownloadCloud,
-  Zap,
+  LayoutDashboard,
   Link2,
-  Database,
-  Send,
   Settings,
-  Video,
-  CircleDot,
+  Users,
+  Wand2,
   Languages,
 } from 'lucide-react';
-import type { PageKey } from '@/lib/types';
-import { useState, useEffect } from 'react';
+
+import { AppLogo } from '@/components/Brand';
 import { supabase } from '@/lib/supabase';
+import { useConnectionStatus } from '@/lib/hooks';
 import { useLanguage } from '@/lib/i18n';
+import type { PageKey } from '@/lib/types';
 
 interface SidebarProps {
   currentPage: PageKey;
@@ -25,16 +25,21 @@ interface SidebarProps {
 export function Sidebar({ currentPage, onNavigate, collapsed }: SidebarProps) {
   const [queueCount, setQueueCount] = useState(0);
   const [activeGroups, setActiveGroups] = useState(0);
+  const [automationCount, setAutomationCount] = useState(0);
   const { language, toggleLanguage, t } = useLanguage();
+  const status = useConnectionStatus();
 
   useEffect(() => {
     (async () => {
-      const [{ count: dlCount }, { count: gCount }] = await Promise.all([
+      const [downloads, groups, rules, forwards] = await Promise.all([
         supabase.from('downloads').select('*', { count: 'exact', head: true }).in('status', ['queued', 'downloading']),
         supabase.from('groups').select('*', { count: 'exact', head: true }).eq('active', true),
+        supabase.from('auto_download_rules').select('*', { count: 'exact', head: true }).eq('active', true),
+        supabase.from('forward_jobs').select('*', { count: 'exact', head: true }).in('status', ['queued', 'running']),
       ]);
-      setQueueCount(dlCount ?? 0);
-      setActiveGroups(gCount ?? 0);
+      setQueueCount(downloads.count ?? 0);
+      setActiveGroups(groups.count ?? 0);
+      setAutomationCount((rules.count ?? 0) + (forwards.count ?? 0));
     })();
   }, [currentPage]);
 
@@ -42,28 +47,30 @@ export function Sidebar({ currentPage, onNavigate, collapsed }: SidebarProps) {
     { key: 'dashboard', label: t('nav.dashboard'), icon: LayoutDashboard },
     { key: 'groups', label: t('nav.groups'), icon: Users, badge: activeGroups },
     { key: 'downloads', label: t('nav.downloads'), icon: DownloadCloud, badge: queueCount },
-    { key: 'autodownload', label: t('nav.autodownload'), icon: Zap },
+    { key: 'automation', label: t('nav.automation'), icon: Wand2, badge: automationCount },
     { key: 'urllists', label: t('nav.urllists'), icon: Link2 },
-    { key: 'r2', label: t('nav.r2'), icon: Database },
-    { key: 'telegram', label: t('nav.telegram'), icon: Send },
     { key: 'settings', label: t('nav.settings'), icon: Settings },
+    { key: 'guide', label: t('nav.guide'), icon: BookOpen },
   ];
 
+  // Green only when everything the app needs is actually reachable.
+  const allGood = status.backend === true && status.telegram;
+
   return (
-    <aside className={`${collapsed ? 'w-16' : 'w-60'} transition-all duration-300 bg-dark-900 border-r border-dark-800 flex flex-col shrink-0`}>
-      <div className="h-16 flex items-center gap-3 px-4 border-b border-dark-800 shrink-0">
-        <div className="w-9 h-9 rounded-xl bg-gradient-to-br from-primary-500 to-accent-500 flex items-center justify-center shrink-0 glow">
-          <Video className="w-5 h-5 text-white" />
-        </div>
+    <aside
+      className={`${collapsed ? 'w-16' : 'w-60'} flex shrink-0 flex-col border-r border-dark-800 bg-dark-900 transition-all duration-300`}
+    >
+      <div className="flex h-16 shrink-0 items-center gap-3 border-b border-dark-800 px-4">
+        <AppLogo size={36} className="glow" />
         {!collapsed && (
           <div className="overflow-hidden">
-            <p className="text-sm font-bold text-white tracking-tight">{t('nav.appName')}</p>
-            <p className="text-[10px] text-dark-500 font-medium">{t('nav.appTagline')}</p>
+            <p className="text-sm font-bold tracking-tight text-white">{t('nav.appName')}</p>
+            <p className="text-[10px] font-medium text-dark-500">{t('nav.appTagline')}</p>
           </div>
         )}
       </div>
 
-      <nav className="flex-1 py-3 px-2 space-y-0.5 overflow-y-auto">
+      <nav className="flex-1 space-y-0.5 overflow-y-auto px-2 py-3">
         {menuItems.map((item) => {
           const Icon = item.icon;
           const isActive = currentPage === item.key;
@@ -71,51 +78,78 @@ export function Sidebar({ currentPage, onNavigate, collapsed }: SidebarProps) {
             <button
               key={item.key}
               onClick={() => onNavigate(item.key)}
-              className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-all duration-200 group relative ${
+              className={`group relative flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium transition-all duration-200 ${
                 isActive
                   ? 'bg-primary-500/15 text-primary-400'
-                  : 'text-dark-400 hover:text-white hover:bg-dark-800'
+                  : 'text-dark-400 hover:bg-dark-800 hover:text-white'
               }`}
               title={collapsed ? item.label : undefined}
             >
-              {isActive && <div className="absolute left-0 top-1/2 -translate-y-1/2 w-1 h-6 bg-primary-500 rounded-r-full" />}
-              <Icon className={`w-[18px] h-[18px] shrink-0 ${isActive ? 'text-primary-400' : ''}`} />
+              {isActive && (
+                <div className="absolute left-0 top-1/2 h-6 w-1 -translate-y-1/2 rounded-r-full bg-primary-500" />
+              )}
+              <Icon className={`h-[18px] w-[18px] shrink-0 ${isActive ? 'text-primary-400' : ''}`} />
               {!collapsed && <span className="flex-1 text-left">{item.label}</span>}
               {!collapsed && item.badge !== undefined && item.badge > 0 && (
-                <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded-full ${
-                  isActive ? 'bg-primary-500 text-white' : 'bg-dark-700 text-dark-300'
-                }`}>
+                <span
+                  className={`rounded-full px-1.5 py-0.5 text-[10px] font-bold ${
+                    isActive ? 'bg-primary-500 text-white' : 'bg-dark-700 text-dark-300'
+                  }`}
+                >
                   {item.badge}
                 </span>
               )}
               {collapsed && item.badge !== undefined && item.badge > 0 && (
-                <span className="absolute top-1 right-1 w-2 h-2 bg-primary-500 rounded-full" />
+                <span className="absolute right-1 top-1 h-2 w-2 rounded-full bg-primary-500" />
               )}
             </button>
           );
         })}
       </nav>
 
-      <div className="p-2 border-t border-dark-800 space-y-1">
+      <div className="space-y-1 border-t border-dark-800 p-2">
         <button
           onClick={toggleLanguage}
-          className={`w-full flex items-center gap-2 px-3 py-2 rounded-lg text-xs font-medium text-dark-300 hover:text-white hover:bg-dark-800 transition-colors ${
+          className={`flex w-full items-center gap-2 rounded-lg px-3 py-2 text-xs font-medium text-dark-300 transition-colors hover:bg-dark-800 hover:text-white ${
             collapsed ? 'justify-center' : ''
           }`}
           title={collapsed ? (language === 'en' ? 'ខ្មែរ' : 'English') : undefined}
         >
-          <Languages className="w-3.5 h-3.5 shrink-0" />
+          <Languages className="h-3.5 w-3.5 shrink-0" />
           {!collapsed && <span>{language === 'en' ? 'ខ្មែរ' : 'English'}</span>}
         </button>
-        <div className={`flex items-center gap-2 px-3 py-2 rounded-lg ${collapsed ? 'justify-center' : ''}`}>
-          <CircleDot className="w-3.5 h-3.5 text-success-500 animate-pulse shrink-0" />
+
+        <button
+          onClick={() => onNavigate('settings')}
+          className={`flex w-full items-center gap-2 rounded-lg px-3 py-2 transition-colors hover:bg-dark-800 ${
+            collapsed ? 'justify-center' : ''
+          }`}
+          title={collapsed ? t('nav.systemStatus') : undefined}
+        >
+          <span
+            className={`h-2.5 w-2.5 shrink-0 rounded-full ${
+              status.backend === null
+                ? 'bg-dark-600'
+                : allGood
+                ? 'animate-pulse bg-success-500'
+                : 'bg-warning-500'
+            }`}
+          />
           {!collapsed && (
-            <div>
-              <p className="text-[10px] text-dark-500 font-medium">{t('nav.systemStatus')}</p>
-              <p className="text-xs text-success-400 font-semibold">{t('nav.online')}</p>
+            <div className="text-left">
+              <p className="text-[10px] font-medium text-dark-500">{t('nav.systemStatus')}</p>
+              <p
+                className={`text-xs font-semibold ${allGood ? 'text-success-400' : 'text-warning-400'}`}
+              >
+                {status.backend === null
+                  ? t('status.checking')
+                  : allGood
+                  ? t('nav.online')
+                  : t('nav.offline')}
+              </p>
             </div>
           )}
-        </div>
+        </button>
       </div>
     </aside>
   );

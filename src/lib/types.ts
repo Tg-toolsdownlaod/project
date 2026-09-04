@@ -117,6 +117,9 @@ export interface AutoDownloadRule {
   auto_ep_end: number | null;
   quality_filter: string | null;
   min_file_size_mb: number;
+  forward_to_chat_id: string | null;
+  forward_to_topic_id: string | null;
+  forward_enabled: boolean;
   active: boolean;
   last_check_at: string | null;
   created_at: string;
@@ -138,12 +141,84 @@ export interface DownloadSettings {
   updated_at: string;
 }
 
+export interface ForwardTarget {
+  id: string;
+  chat_id: string;
+  title: string;
+  username: string | null;
+  is_forum: boolean;
+  verified: boolean;
+  last_used_at: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export type CopyMode = 'auto' | 'forward' | 'reupload';
+
+export interface GroupMirror {
+  id: string;
+  source_group_id: string;
+  target_chat_id: string;
+  target_title: string | null;
+  create_topics: boolean;
+  copy_mode: CopyMode;
+  auto_follow: boolean;
+  status: 'draft' | 'preparing' | 'running' | 'completed' | 'failed' | 'cancelled';
+  total_topics: number;
+  total_videos: number;
+  error: string | null;
+  prepared_at: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface MirrorTopicMap {
+  id: string;
+  mirror_id: string;
+  source_topic_id: string | null;
+  target_topic_id: string | null;
+  title: string;
+  created_at: string;
+}
+
+export interface ForwardJob {
+  id: string;
+  source_group_id: string | null;
+  source_topic_id: string | null;
+  target_chat_id: string;
+  target_title: string | null;
+  target_topic_id: string | null;
+  mirror_id: string | null;
+  copy_mode: CopyMode;
+  mode: 'selected' | 'topic';
+  status: 'queued' | 'running' | 'completed' | 'failed' | 'cancelled';
+  total_count: number;
+  forwarded_count: number;
+  failed_count: number;
+  auto_follow: boolean;
+  error: string | null;
+  started_at: string | null;
+  completed_at: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface ForwardJobItem {
+  id: string;
+  job_id: string;
+  episode_id: string | null;
+  status: 'pending' | 'forwarded' | 'failed' | 'skipped';
+  forwarded_message_id: string | null;
+  error: string | null;
+  forwarded_at: string | null;
+  created_at: string;
+}
+
 export type PageKey =
   | 'dashboard'
   | 'groups'
   | 'downloads'
-  | 'autodownload'
+  | 'automation'
   | 'urllists'
-  | 'r2'
-  | 'telegram'
-  | 'settings';
+  | 'settings'
+  | 'guide';

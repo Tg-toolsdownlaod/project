@@ -4,6 +4,235 @@
 @tailwind components;
 @tailwind utilities;
 
+/*
+  Theming works by swapping CSS variables, not class names.
+
+  tailwind.config.js maps every palette step to a `--c-*` variable, so
+  `bg-dark-900` or `text-white` keeps working in both themes and only the
+  variables below change. In the light theme the neutral ramp is inverted
+  (dark-950 becomes the lightest surface) and `--c-white` becomes near-black,
+  because across the app `text-white` means "the strongest foreground", not
+  literally white.
+*/
+:root {
+  color-scheme: dark;
+
+  --c-white: 255 255 255;
+
+  /* Neutral ramp — dark theme: 950 is the page, 50 is the brightest text. */
+  --c-dark-50: 248 250 252;
+  --c-dark-100: 241 245 249;
+  --c-dark-200: 226 232 240;
+  --c-dark-300: 203 213 225;
+  --c-dark-400: 148 163 184;
+  --c-dark-500: 100 116 139;
+  --c-dark-600: 71 85 105;
+  --c-dark-700: 51 65 85;
+  --c-dark-800: 30 41 59;
+  --c-dark-900: 15 23 42;
+  --c-dark-950: 2 6 23;
+
+  /* Status ramps are shared by both themes. */
+  --c-success-50: 240 253 244;
+  --c-success-100: 220 252 231;
+  --c-success-200: 187 247 208;
+  --c-success-300: 134 239 172;
+  --c-success-400: 74 222 128;
+  --c-success-500: 34 197 94;
+  --c-success-600: 22 163 74;
+  --c-success-700: 21 128 61;
+  --c-success-800: 22 101 52;
+  --c-success-900: 20 83 45;
+
+  --c-warning-50: 255 251 235;
+  --c-warning-100: 254 243 199;
+  --c-warning-200: 253 230 138;
+  --c-warning-300: 252 211 77;
+  --c-warning-400: 251 191 36;
+  --c-warning-500: 245 158 11;
+  --c-warning-600: 217 119 6;
+  --c-warning-700: 180 83 9;
+  --c-warning-800: 146 64 14;
+  --c-warning-900: 120 53 15;
+
+  --c-error-50: 254 242 242;
+  --c-error-100: 254 226 226;
+  --c-error-200: 254 202 202;
+  --c-error-300: 252 165 165;
+  --c-error-400: 248 113 113;
+  --c-error-500: 239 68 68;
+  --c-error-600: 220 38 38;
+  --c-error-700: 185 28 28;
+  --c-error-800: 153 27 27;
+  --c-error-900: 127 29 29;
+}
+
+/* Light theme: invert the neutral ramp and flip the strongest foreground. */
+html.theme-light {
+  color-scheme: light;
+
+  --c-white: 15 23 42;
+
+  --c-dark-50: 15 23 42;
+  --c-dark-100: 30 41 59;
+  --c-dark-200: 51 65 85;
+  --c-dark-300: 71 85 105;
+  --c-dark-400: 90 104 128;
+  --c-dark-500: 82 95 118;
+  --c-dark-600: 176 190 207;
+  --c-dark-700: 214 222 232;
+  --c-dark-800: 233 238 245;
+  --c-dark-900: 247 249 252;
+  --c-dark-950: 255 255 255;
+}
+
+/* ---- Accent themes: primary drives the UI, accent the secondary hue. ---- */
+
+/* Blue (default) */
+:root,
+html.accent-blue {
+  --c-primary-50: 239 246 255;
+  --c-primary-100: 219 234 254;
+  --c-primary-200: 191 219 254;
+  --c-primary-300: 147 197 253;
+  --c-primary-400: 96 165 250;
+  --c-primary-500: 59 130 246;
+  --c-primary-600: 37 99 235;
+  --c-primary-700: 29 78 216;
+  --c-primary-800: 30 64 175;
+  --c-primary-900: 30 58 138;
+  --c-primary-950: 23 37 84;
+
+  --c-accent-50: 236 254 255;
+  --c-accent-100: 207 250 254;
+  --c-accent-200: 165 243 252;
+  --c-accent-300: 103 232 249;
+  --c-accent-400: 34 211 238;
+  --c-accent-500: 6 182 212;
+  --c-accent-600: 8 145 178;
+  --c-accent-700: 14 116 144;
+  --c-accent-800: 21 94 117;
+  --c-accent-900: 22 78 99;
+}
+
+/* Violet */
+html.accent-violet {
+  --c-primary-50: 245 243 255;
+  --c-primary-100: 237 233 254;
+  --c-primary-200: 221 214 254;
+  --c-primary-300: 196 181 253;
+  --c-primary-400: 167 139 250;
+  --c-primary-500: 139 92 246;
+  --c-primary-600: 124 58 237;
+  --c-primary-700: 109 40 217;
+  --c-primary-800: 91 33 182;
+  --c-primary-900: 76 29 149;
+  --c-primary-950: 46 16 101;
+
+  --c-accent-50: 253 242 248;
+  --c-accent-100: 252 231 243;
+  --c-accent-200: 251 207 232;
+  --c-accent-300: 249 168 212;
+  --c-accent-400: 244 114 182;
+  --c-accent-500: 236 72 153;
+  --c-accent-600: 219 39 119;
+  --c-accent-700: 190 24 93;
+  --c-accent-800: 157 23 77;
+  --c-accent-900: 131 24 67;
+}
+
+/* Emerald */
+html.accent-emerald {
+  --c-primary-50: 236 253 245;
+  --c-primary-100: 209 250 229;
+  --c-primary-200: 167 243 208;
+  --c-primary-300: 110 231 183;
+  --c-primary-400: 52 211 153;
+  --c-primary-500: 16 185 129;
+  --c-primary-600: 5 150 105;
+  --c-primary-700: 4 120 87;
+  --c-primary-800: 6 95 70;
+  --c-primary-900: 6 78 59;
+  --c-primary-950: 2 44 34;
+
+  --c-accent-50: 240 253 250;
+  --c-accent-100: 204 251 241;
+  --c-accent-200: 153 246 228;
+  --c-accent-300: 94 234 212;
+  --c-accent-400: 45 212 191;
+  --c-accent-500: 20 184 166;
+  --c-accent-600: 13 148 136;
+  --c-accent-700: 15 118 110;
+  --c-accent-800: 17 94 89;
+  --c-accent-900: 19 78 74;
+}
+
+/* Amber */
+html.accent-amber {
+  --c-primary-50: 255 251 235;
+  --c-primary-100: 254 243 199;
+  --c-primary-200: 253 230 138;
+  --c-primary-300: 252 211 77;
+  --c-primary-400: 251 191 36;
+  --c-primary-500: 245 158 11;
+  --c-primary-600: 217 119 6;
+  --c-primary-700: 180 83 9;
+  --c-primary-800: 146 64 14;
+  --c-primary-900: 120 53 15;
+  --c-primary-950: 69 26 3;
+
+  --c-accent-50: 255 247 237;
+  --c-accent-100: 255 237 213;
+  --c-accent-200: 254 215 170;
+  --c-accent-300: 253 186 116;
+  --c-accent-400: 251 146 60;
+  --c-accent-500: 249 115 22;
+  --c-accent-600: 234 88 12;
+  --c-accent-700: 194 65 12;
+  --c-accent-800: 154 52 18;
+  --c-accent-900: 124 45 18;
+}
+
+/* ---- Light-theme contrast corrections for coloured text ---- */
+html.theme-light {
+  --c-success-400: 21 128 61;
+  --c-warning-400: 180 83 9;
+  --c-error-400: 185 28 28;
+  --c-success-300: 22 101 52;
+  --c-warning-300: 146 64 14;
+  --c-error-300: 153 27 27;
+  --c-warning-200: 120 53 15;
+}
+
+html.theme-light.accent-blue,
+html.theme-light:not(.accent-violet):not(.accent-emerald):not(.accent-amber) {
+  --c-primary-400: 37 99 235;
+  --c-primary-300: 29 78 216;
+  --c-accent-400: 8 145 178;
+  --c-accent-300: 14 116 144;
+}
+
+html.theme-light.accent-violet {
+  --c-primary-400: 124 58 237;
+  --c-primary-300: 109 40 217;
+  --c-accent-400: 219 39 119;
+  --c-accent-300: 190 24 93;
+}
+
+html.theme-light.accent-emerald {
+  --c-primary-400: 5 150 105;
+  --c-primary-300: 4 120 87;
+  --c-accent-400: 13 148 136;
+  --c-accent-300: 15 118 110;
+}
+
+html.theme-light.accent-amber {
+  --c-primary-400: 180 83 9;
+  --c-primary-300: 146 64 14;
+  --c-accent-400: 194 65 12;
+  --c-accent-300: 154 52 18;
+}
+
 @layer base {
   * {
     -webkit-font-smoothing: antialiased;
@@ -30,34 +259,35 @@
   }
 
   ::-webkit-scrollbar-thumb {
-    background: #334155;
+    background: rgb(var(--c-dark-700));
     border-radius: 3px;
   }
 
   ::-webkit-scrollbar-thumb:hover {
-    background: #475569;
+    background: rgb(var(--c-dark-600));
   }
 }
 
 @layer components {
   .glass {
-    background: rgba(15, 23, 42, 0.6);
+    background: rgb(var(--c-dark-900) / 0.6);
     backdrop-filter: blur(12px);
     -webkit-backdrop-filter: blur(12px);
-    border: 1px solid rgba(148, 163, 184, 0.1);
+    border: 1px solid rgb(var(--c-dark-400) / 0.1);
   }
 
   .glass-light {
-    background: rgba(255, 255, 255, 0.05);
+    background: rgb(var(--c-dark-50) / 0.05);
     backdrop-filter: blur(8px);
     -webkit-backdrop-filter: blur(8px);
-    border: 1px solid rgba(255, 255, 255, 0.08);
+    border: 1px solid rgb(var(--c-dark-50) / 0.08);
   }
 
   .gradient-border {
     position: relative;
-    background: linear-gradient(#0f172a, #0f172a) padding-box,
-                linear-gradient(135deg, #3b82f6, #06b6d4) border-box;
+    background:
+      linear-gradient(rgb(var(--c-dark-900)), rgb(var(--c-dark-900))) padding-box,
+      linear-gradient(135deg, rgb(var(--c-primary-500)), rgb(var(--c-accent-500))) border-box;
     border: 1px solid transparent;
   }
 
@@ -67,19 +297,26 @@
 
   .card-hover:hover {
     transform: translateY(-2px);
-    box-shadow: 0 8px 25px -5px rgba(0, 0, 0, 0.3), 0 0 0 1px rgba(59, 130, 246, 0.1);
+    box-shadow:
+      0 8px 25px -5px rgb(2 6 23 / 0.3),
+      0 0 0 1px rgb(var(--c-primary-500) / 0.1);
   }
 
   .glow {
-    box-shadow: 0 0 20px -5px rgba(59, 130, 246, 0.4);
+    box-shadow: 0 0 20px -5px rgb(var(--c-primary-500) / 0.4);
   }
 
   .glow-accent {
-    box-shadow: 0 0 20px -5px rgba(6, 182, 212, 0.4);
+    box-shadow: 0 0 20px -5px rgb(var(--c-accent-500) / 0.4);
   }
 
   .shimmer-bg {
-    background: linear-gradient(90deg, #1e293b 0%, #334155 50%, #1e293b 100%);
+    background: linear-gradient(
+      90deg,
+      rgb(var(--c-dark-800)) 0%,
+      rgb(var(--c-dark-700)) 50%,
+      rgb(var(--c-dark-800)) 100%
+    );
     background-size: 1000px 100%;
     animation: shimmer 2s linear infinite;
   }

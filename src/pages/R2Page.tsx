@@ -14,6 +14,7 @@ import {
   AlertTriangle,
 } from 'lucide-react';
 import { supabase } from '@/lib/supabase';
+import { backendConfigured, testR2Connection } from '@/lib/backend';
 import type { R2Settings, Episode } from '@/lib/types';
 import { formatBytes, formatTimeAgo } from '@/lib/utils';
 
@@ -23,7 +24,10 @@ export function R2Page() {
   const [saving, setSaving] = useState(false);
   const [connected, setConnected] = useState(false);
   const [loading, setLoading] = useState(true);
+  const [testing, setTesting] = useState(false);
   const [error, setError] = useState('');
+  const [notice, setNotice] = useState('');
+  const [remoteStats, setRemoteStats] = useState<{ object_count?: number; total_bytes?: number } | null>(null);
 
   useEffect(() => {
     (async () => {
@@ -46,8 +50,9 @@ export function R2Page() {
     })();
   }, []);
 
-  const handleSave = async () => {
-    if (!settings) return;
+  /** Persists the form and returns the row id, or null when the save failed. */
+  const handleSave = async (): Promise<string | null> => {
+    if (!settings) return null;
     setSaving(true);
     setError('');
     const result = settings.id
@@ -70,16 +75,55 @@ export function R2Page() {
           region: settings.region,
         }).select().maybeSingle();
 
+    let savedId: string | null = settings.id || null;
     if (result.error) {
       setError('Could not save R2 settings. Please try again.');
+      savedId = null;
     } else if (!settings.id && result.data) {
-      setSettings({ ...settings, id: (result.data as R2Settings).id });
+      savedId = (result.data as R2Settings).id;
+      setSettings({ ...settings, id: savedId });
     }
     setSaving(false);
+    return savedId;
   };
 
-  const handleTest = () => {
-    setError('R2 connection test is not available yet. The storage service is not connected to this app.');
+  const handleTest = async () => {
+    if (!settings) return;
+    setError('');
+    setNotice('');
+    if (!settings.account_id || !settings.access_key_id || !settings.secret_access_key || !settings.bucket_name) {
+      setError('Fill in the Account ID, Access Key ID, Secret Access Key and Bucket Name first.');
+      return;
+    }
+    if (!backendConfigured) {
+      setError('No backend is configured (VITE_TELEGRAM_BACKEND_URL), so the credentials cannot be verified from the browser.');
+      return;
+    }
+    setTesting(true);
+    let savedId: string | null = null;
+    try {
+      // Save first so the backend tests exactly what is stored.
+      savedId = await handleSave();
+      if (!savedId) {
+        setTesting(false);
+        return;
+      }
+      const rowId: string = savedId;
+      const result = await testR2Connection();
+      setRemoteStats({ object_count: result.object_count, total_bytes: result.total_bytes });
+      setConnected(true);
+      const now = new Date().toISOString();
+      await supabase.from('r2_settings').update({ connected: true, last_connected_at: now }).eq('id', rowId);
+      setSettings((prev) => (prev ? { ...prev, id: rowId, connected: true, last_connected_at: now } : prev));
+      setNotice(`Connected to ${result.bucket || settings.bucket_name}.`);
+    } catch (err) {
+      setConnected(false);
+      if (savedId) {
+        await supabase.from('r2_settings').update({ connected: false }).eq('id', savedId);
+      }
+      setError(err instanceof Error ? err.message : 'Could not reach the R2 bucket with these credentials.');
+    }
+    setTesting(false);
   };
 
   const update = (field: keyof R2Settings, value: string) => {
@@ -87,7 +131,7 @@ export function R2Page() {
     setSettings({ ...settings, [field]: value });
   };
 
-  const totalSize = episodes.reduce((sum, e) => sum + (e.file_size || 0), 0);
+  const totalSize = remoteStats?.total_bytes ?? episodes.reduce((sum, e) => sum + (e.file_size || 0), 0);
 
   if (loading) {
     return <div className="flex items-center justify-center py-20"><Loader2 className="w-6 h-6 text-primary-500 animate-spin" /></div>;
@@ -99,6 +143,12 @@ export function R2Page() {
         <div className="flex items-start gap-2 rounded-xl border border-error-500/30 bg-error-500/10 px-4 py-3 text-sm text-error-300">
           <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
           <span>{error}</span>
+        </div>
+      )}
+      {notice && (
+        <div className="flex items-start gap-2 rounded-xl border border-success-500/30 bg-success-500/10 px-4 py-3 text-sm text-success-300">
+          <CheckCircle2 className="mt-0.5 h-4 w-4 shrink-0" />
+          <span>{notice}</span>
         </div>
       )}
       {/* Connection Status Banner */}
@@ -151,8 +201,10 @@ export function R2Page() {
               <FileVideo className="w-4 h-4 text-primary-400" />
               <h3 className="text-sm font-semibold text-white">Files in R2</h3>
             </div>
-            <p className="text-2xl font-bold text-white tabular-nums">{episodes.length}</p>
-            <p className="text-xs text-dark-500 mt-1">Video files uploaded</p>
+            <p className="text-2xl font-bold text-white tabular-nums">{remoteStats?.object_count ?? episodes.length}</p>
+            <p className="text-xs text-dark-500 mt-1">
+              {remoteStats?.object_count !== undefined ? 'Objects in the bucket' : 'Video files uploaded'}
+            </p>
           </div>
           <div className="rounded-xl border border-dark-800 bg-dark-900/60 p-4">
             <div className="flex items-center gap-2 mb-3">
@@ -189,9 +241,10 @@ export function R2Page() {
           </button>
           <button
             onClick={handleTest}
-            className="flex items-center gap-2 px-4 py-2.5 rounded-lg bg-dark-800 hover:bg-dark-700 text-dark-300 text-sm font-medium transition-colors"
+            disabled={testing || saving}
+            className="flex items-center gap-2 px-4 py-2.5 rounded-lg bg-dark-800 hover:bg-dark-700 text-dark-300 text-sm font-medium transition-colors disabled:opacity-50"
           >
-            <RefreshCw className="w-4 h-4" /> Test Connection
+            {testing ? <Loader2 className="w-4 h-4 animate-spin" /> : <RefreshCw className="w-4 h-4" />} Test Connection
           </button>
         </div>
       </div>

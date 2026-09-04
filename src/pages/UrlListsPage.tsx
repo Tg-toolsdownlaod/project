@@ -4,7 +4,6 @@ import {
   Plus,
   Trash2,
   ExternalLink,
-  Film,
   Download,
   Copy,
   Check,
@@ -653,7 +652,7 @@ function AddItemModal({ onClose, onAdd }: { onClose: () => void; onAdd: (url: st
 
 function EditListName({ list, onSave, onCancel }: { list: UrlList; onSave: (title: string, description: string) => void; onCancel: () => void }) {
   const [title, setTitle] = useState(list.title);
-  const [description, setDescription] = useState(list.description || '');
+  const [description] = useState(list.description || '');
   return (
     <div className="flex items-center gap-2">
       <input value={title} onChange={(e) => setTitle(e.target.value)} autoFocus
