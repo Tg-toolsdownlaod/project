@@ -144,6 +144,20 @@ export function deleteR2Object(key: string) {
   return callBackend('/api/r2/delete', { key });
 }
 
+/**
+ * Asks the service to fetch every URL in a list and stream it into R2. It
+ * answers as soon as the work is queued -- the page follows the rows, which
+ * carry the key and the public URL once each one lands.
+ */
+export function saveUrlListToR2(listId: string) {
+  return callBackend<{ queued: number }>(`/api/urls/lists/${listId}/save`);
+}
+
+/** The same, for the items that were ticked rather than a whole list. */
+export function saveUrlItemsToR2(itemIds: string[]) {
+  return callBackend<{ queued: number }>('/api/urls/items/save', { item_ids: itemIds });
+}
+
 export interface BackendHealth {
   telegram: boolean;
   r2: boolean;

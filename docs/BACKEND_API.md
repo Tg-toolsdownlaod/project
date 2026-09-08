@@ -296,6 +296,43 @@ Removes one object, for undoing a mistaken upload.
 
 ---
 
+## URL lists
+
+### `POST /api/urls/lists/:listId/save`
+Fetches every URL in the list that is not already in R2 and streams it into the
+bucket. It answers as soon as the work is queued — the page follows the
+`url_list_items` rows, which the service updates as each one lands.
+
+```json
+{ "success": true, "queued": 42 }
+```
+
+Each row ends up with `status`, `r2_key`, `r2_url`, `file_size`, and `error`
+when the fetch failed. Files go to `URL_FETCH_FOLDER` (default `urls`), and at
+most `MAX_CONCURRENT_URL_FETCHES` (default 2) run at once.
+
+Only public `http://`/`https://` URLs are accepted: every hop of a redirect
+chain is resolved and refused if it points at a loopback, link-local or private
+address. The service holds the service-role key and the R2 secret, and a URL
+pasted into a list must not be able to aim it at its own network.
+
+### `POST /api/urls/items/save`
+The same for the items the operator ticked.
+
+```json
+{ "item_ids": ["uuid", "uuid"] }
+```
+
+### `POST /api/urls/check`
+Answers `{ "success": true }` if a URL is one the service would be willing to
+fetch, and an error explaining why not otherwise.
+
+```json
+{ "url": "https://example.com/ep01.mp4" }
+```
+
+---
+
 ## Speed and rate-limit tuning
 
 None of these are separate endpoints — they are environment variables the
