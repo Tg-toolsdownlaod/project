@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   Plus,
   Users,
@@ -33,6 +33,31 @@ import { MirrorModal } from '@/components/MirrorModal';
 /** The synthetic topic id used for videos that sit outside any forum topic. */
 const NO_TOPIC = '__none__';
 
+/** The quick filters over a topic's videos, beyond the search and EP range. */
+type EpisodeFilter = 'all' | 'pending' | 'downloading' | 'completed' | 'failed' | 'in_r2' | 'not_in_r2';
+
+const EPISODE_FILTERS: { key: EpisodeFilter; label: string }[] = [
+  { key: 'all', label: 'All' },
+  { key: 'pending', label: 'Not downloaded' },
+  { key: 'downloading', label: 'In progress' },
+  { key: 'completed', label: 'Downloaded' },
+  { key: 'failed', label: 'Failed' },
+  { key: 'in_r2', label: 'In R2' },
+  { key: 'not_in_r2', label: 'Not in R2' },
+];
+
+function matchesFilter(ep: Episode, filter: EpisodeFilter): boolean {
+  switch (filter) {
+    case 'all': return true;
+    case 'pending': return ep.status === 'pending' || ep.status === 'queued';
+    case 'downloading': return ep.status === 'downloading';
+    case 'completed': return ep.status === 'completed';
+    case 'failed': return ep.status === 'failed';
+    case 'in_r2': return Boolean(ep.r2_key);
+    case 'not_in_r2': return !ep.r2_key;
+  }
+}
+
 interface ForwardRequest {
   group: Group;
   topic: Topic | null;
@@ -57,9 +82,12 @@ export function GroupsPage() {
   const [error, setError] = useState('');
   const [toast, setToast] = useState('');
   const [search, setSearch] = useState('');
+  const [statusFilter, setStatusFilter] = useState<EpisodeFilter>('all');
   const [epFrom, setEpFrom] = useState('');
   const [epTo, setEpTo] = useState('');
   const [selectedEpisodes, setSelectedEpisodes] = useState<Set<string>>(new Set());
+  // Where the last tick landed, so Shift+click knows what range to fill.
+  const lastToggledId = useRef<string | null>(null);
 
   const loadData = useCallback(async () => {
     const [gRes, tRes, eRes, r2Res] = await Promise.all([
@@ -116,6 +144,7 @@ export function GroupsPage() {
     const to = epTo.trim() ? Number(epTo) : null;
     const q = search.trim().toLowerCase();
     return topicEpisodes.filter((ep) => {
+      if (!matchesFilter(ep, statusFilter)) return false;
       if (from !== null && (ep.ep_number === null || ep.ep_number < from)) return false;
       if (to !== null && (ep.ep_number === null || ep.ep_number > to)) return false;
       if (!q) return true;
@@ -125,13 +154,15 @@ export function GroupsPage() {
         String(ep.ep_number ?? '').includes(q)
       );
     });
-  }, [topicEpisodes, search, epFrom, epTo]);
+  }, [topicEpisodes, search, statusFilter, epFrom, epTo]);
 
   const resetEpisodeFilters = () => {
     setSearch('');
+    setStatusFilter('all');
     setEpFrom('');
     setEpTo('');
     setSelectedEpisodes(new Set());
+    lastToggledId.current = null;
   };
 
   const openGroup = (id: string) => {
@@ -217,11 +248,42 @@ export function GroupsPage() {
     loadData();
   };
 
-  const toggleEpisode = (id: string) => {
+  /**
+   * Ticks one video, or -- with Shift held -- everything between it and the
+   * last one ticked. Picking "EP012 to EP180" out of a long topic is the
+   * common case, and one click per episode is not a way to spend an evening.
+   */
+  const toggleEpisode = (id: string, shiftKey = false) => {
     const next = new Set(selectedEpisodes);
+    const anchor = lastToggledId.current;
+
+    if (shiftKey && anchor && anchor !== id) {
+      const from = filteredEpisodes.findIndex((e) => e.id === anchor);
+      const to = filteredEpisodes.findIndex((e) => e.id === id);
+      if (from !== -1 && to !== -1) {
+        const [start, end] = from < to ? [from, to] : [to, from];
+        // The anchor's own state decides the whole run, the way a file list does.
+        const selecting = next.has(anchor);
+        for (const ep of filteredEpisodes.slice(start, end + 1)) {
+          if (selecting) next.add(ep.id);
+          else next.delete(ep.id);
+        }
+        setSelectedEpisodes(next);
+        lastToggledId.current = id;
+        return;
+      }
+    }
+
     if (next.has(id)) next.delete(id);
     else next.add(id);
+    lastToggledId.current = id;
     setSelectedEpisodes(next);
+  };
+
+  /** Adds every video the current filters show that is not yet downloaded. */
+  const selectMatching = (predicate: (ep: Episode) => boolean) => {
+    setSelectedEpisodes(new Set(filteredEpisodes.filter(predicate).map((e) => e.id)));
+    lastToggledId.current = null;
   };
 
   const allVisibleSelected = filteredEpisodes.length > 0 && filteredEpisodes.every((e) => selectedEpisodes.has(e.id));
@@ -229,6 +291,7 @@ export function GroupsPage() {
   const toggleSelectAllVisible = () => {
     if (allVisibleSelected) setSelectedEpisodes(new Set());
     else setSelectedEpisodes(new Set(filteredEpisodes.map((e) => e.id)));
+    lastToggledId.current = null;
   };
 
   const selectedEpisodeObjects = topicEpisodes.filter((e) => selectedEpisodes.has(e.id));
@@ -289,6 +352,11 @@ export function GroupsPage() {
           onToggle={toggleEpisode}
           allVisibleSelected={allVisibleSelected}
           onToggleAll={toggleSelectAllVisible}
+          onSelectNotDownloaded={() => selectMatching((e) => e.status !== 'completed' && e.status !== 'downloading')}
+          onSelectNotInR2={() => selectMatching((e) => !e.r2_key)}
+          onClearSelection={() => { setSelectedEpisodes(new Set()); lastToggledId.current = null; }}
+          statusFilter={statusFilter}
+          onStatusFilter={setStatusFilter}
           search={search}
           onSearch={setSearch}
           epFrom={epFrom}
@@ -694,9 +762,14 @@ interface EpisodeBrowserProps {
   episodes: Episode[];
   totalInTopic: number;
   selected: Set<string>;
-  onToggle: (id: string) => void;
+  onToggle: (id: string, shiftKey?: boolean) => void;
   allVisibleSelected: boolean;
   onToggleAll: () => void;
+  onSelectNotDownloaded: () => void;
+  onSelectNotInR2: () => void;
+  onClearSelection: () => void;
+  statusFilter: EpisodeFilter;
+  onStatusFilter: (v: EpisodeFilter) => void;
   search: string;
   onSearch: (v: string) => void;
   epFrom: string;
@@ -713,7 +786,8 @@ interface EpisodeBrowserProps {
 
 function EpisodeBrowser({
   group, topic, isNoTopicBucket, episodes, totalInTopic, selected, onToggle,
-  allVisibleSelected, onToggleAll, search, onSearch, epFrom, epTo, onEpFrom, onEpTo,
+  allVisibleSelected, onToggleAll, onSelectNotDownloaded, onSelectNotInR2, onClearSelection,
+  statusFilter, onStatusFilter, search, onSearch, epFrom, epTo, onEpFrom, onEpTo,
   scanning, r2Connected, onScan, onBack, onQueue, onForward,
 }: EpisodeBrowserProps) {
   const title = isNoTopicBucket ? 'Videos without a topic' : topic?.title ?? group.title;
@@ -787,7 +861,45 @@ function EpisodeBrowser({
         >
           {allVisibleSelected ? 'Deselect all' : `Select all (${episodes.length})`}
         </button>
-        <span className="ml-auto text-[11px] text-dark-500">{episodes.length} shown</span>
+        <button
+          onClick={onSelectNotDownloaded}
+          disabled={episodes.length === 0}
+          title="Tick every video here that has not been downloaded yet"
+          className="rounded-lg bg-dark-800 px-3 py-1.5 text-[11px] font-medium text-dark-300 transition-colors hover:bg-dark-700 disabled:opacity-40"
+        >
+          Select not downloaded
+        </button>
+        <button
+          onClick={onSelectNotInR2}
+          disabled={episodes.length === 0}
+          title="Tick every video here that is not in the bucket yet"
+          className="rounded-lg bg-dark-800 px-3 py-1.5 text-[11px] font-medium text-dark-300 transition-colors hover:bg-dark-700 disabled:opacity-40"
+        >
+          Select not in R2
+        </button>
+        <span className="ml-auto text-[11px] text-dark-500">
+          {episodes.length} shown · <span className="text-dark-600">Shift+click for a range</span>
+        </span>
+      </div>
+
+      {/* Status filter */}
+      <div className="flex flex-wrap items-center gap-1.5">
+        {EPISODE_FILTERS.map((filter) => {
+          const active = statusFilter === filter.key;
+          return (
+            <button
+              key={filter.key}
+              onClick={() => onStatusFilter(filter.key)}
+              className={`rounded-full px-3 py-1 text-[11px] font-medium transition-colors ${
+                active
+                  ? 'bg-primary-500 text-white'
+                  : 'bg-dark-900/60 text-dark-400 hover:bg-dark-800 hover:text-white'
+              }`}
+            >
+              {filter.label}
+            </button>
+          );
+        })}
       </div>
 
       {/* Selection action bar */}
@@ -797,6 +909,12 @@ function EpisodeBrowser({
             {selected.size} selected · {formatBytes(selectedSize)}
           </span>
           <div className="flex items-center gap-2">
+            <button
+              onClick={onClearSelection}
+              className="flex items-center gap-1.5 rounded-lg bg-dark-800/70 px-3 py-1.5 text-xs font-medium text-dark-300 transition-colors hover:bg-dark-700 hover:text-white"
+            >
+              <X className="h-3.5 w-3.5" /> Clear
+            </button>
             <button
               onClick={onQueue}
               className="flex items-center gap-1.5 rounded-lg bg-primary-500 px-3 py-1.5 text-xs font-medium text-white transition-colors hover:bg-primary-600"
@@ -827,8 +945,9 @@ function EpisodeBrowser({
             return (
               <div
                 key={ep.id}
-                onClick={() => onToggle(ep.id)}
-                className={`flex cursor-pointer items-center gap-3 rounded-xl border p-3 transition-all ${
+                onClick={(event) => onToggle(ep.id, event.shiftKey)}
+                // select-none: Shift+click is a range tick here, not a text selection.
+                className={`flex cursor-pointer select-none items-center gap-3 rounded-xl border p-3 transition-all ${
                   isSelected
                     ? 'border-primary-500/40 bg-primary-500/10'
                     : 'border-transparent bg-dark-900/60 hover:border-dark-700 hover:bg-dark-800/60'

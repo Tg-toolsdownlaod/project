@@ -105,8 +105,13 @@ export interface UrlListItem {
   url: string;
   label: string | null;
   episode_number: number | null;
-  status: 'pending' | 'downloading' | 'completed' | 'failed';
+  status: 'pending' | 'queued' | 'downloading' | 'completed' | 'failed';
+  r2_key: string | null;
+  r2_url: string | null;
+  file_size: number | null;
+  error: string | null;
   created_at: string;
+  updated_at: string | null;
 }
 
 export interface AutoDownloadRule {

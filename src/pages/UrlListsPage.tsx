@@ -4,7 +4,6 @@ import {
   Plus,
   Trash2,
   ExternalLink,
-  Download,
   Copy,
   Check,
   List,
@@ -17,10 +16,13 @@ import {
   Youtube,
   AlertTriangle,
   Loader2,
+  Cloud,
+  CloudUpload,
 } from 'lucide-react';
 import { supabase } from '@/lib/supabase';
+import { backendConfigured, saveUrlItemsToR2, saveUrlListToR2 } from '@/lib/backend';
 import type { UrlList, UrlListItem } from '@/lib/types';
-import { getStatusColor } from '@/lib/utils';
+import { formatBytes, getStatusColor } from '@/lib/utils';
 import { parseUrls, getSourceColor, type ParsedUrlItem } from '@/lib/urlParser';
 
 const COLORS = [
@@ -41,6 +43,9 @@ export function UrlListsPage() {
   const [editingList, setEditingList] = useState<string | null>(null);
   const [copiedId, setCopiedId] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState('');
+  const [notice, setNotice] = useState('');
 
   const loadData = useCallback(async () => {
     const [lRes, iRes] = await Promise.all([
@@ -55,6 +60,15 @@ export function UrlListsPage() {
   useEffect(() => {
     loadData();
   }, [loadData]);
+
+  // While anything is on its way into R2 the rows change behind the page's
+  // back -- the service writes them -- so follow them until the queue drains.
+  const working = items.some((i) => i.status === 'queued' || i.status === 'downloading');
+  useEffect(() => {
+    if (!working) return;
+    const timer = setInterval(loadData, 3000);
+    return () => clearInterval(timer);
+  }, [working, loadData]);
 
   const addList = async (title: string, description: string, color: string) => {
     const { data } = await supabase.from('url_lists').insert({ title, description, color }).select().single();
@@ -107,9 +121,51 @@ export function UrlListsPage() {
     loadData();
   };
 
-  const queueItemDownload = async (item: UrlListItem) => {
-    await supabase.from('url_list_items').update({ status: 'downloading' }).eq('id', item.id);
-    loadData();
+  /**
+   * Hands the URL to the service, which fetches it and streams it into R2.
+   * Nothing is written here: the service owns the row from this point, and the
+   * poll above brings the key and the public URL back.
+   */
+  const saveItemsToR2 = async (itemIds: string[]) => {
+    setError('');
+    setNotice('');
+    if (!backendConfigured) {
+      setError('No backend is configured (VITE_TELEGRAM_BACKEND_URL), so nothing can fetch these URLs.');
+      return;
+    }
+    setSaving(true);
+    try {
+      const result = await saveUrlItemsToR2(itemIds);
+      setNotice(`Saving ${result.queued} URL${result.queued === 1 ? '' : 's'} into R2…`);
+      loadData();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Could not start saving to R2.');
+    }
+    setSaving(false);
+  };
+
+  /** The same for a whole list, so a hundred links are one click. */
+  const saveListToR2 = async () => {
+    if (!selectedList) return;
+    setError('');
+    setNotice('');
+    if (!backendConfigured) {
+      setError('No backend is configured (VITE_TELEGRAM_BACKEND_URL), so nothing can fetch these URLs.');
+      return;
+    }
+    setSaving(true);
+    try {
+      const result = await saveUrlListToR2(selectedList);
+      setNotice(
+        result.queued === 0
+          ? 'Every URL in this list is already in R2.'
+          : `Saving ${result.queued} URL${result.queued === 1 ? '' : 's'} into R2…`
+      );
+      loadData();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Could not start saving to R2.');
+    }
+    setSaving(false);
   };
 
   const copyUrl = (url: string, id: string) => {
@@ -127,6 +183,9 @@ export function UrlListsPage() {
   const currentList = lists.find((l) => l.id === selectedList);
   const currentColor = COLORS.find((c) => c.name === currentList?.color) || COLORS[0];
   const listItems = items.filter((i) => i.url_list_id === selectedList);
+  const savableCount = listItems.filter((i) => !i.r2_key && i.status !== 'downloading').length;
+  const inR2 = listItems.filter((i) => i.r2_key);
+  const savedBytes = inR2.reduce((sum, i) => sum + (i.file_size || 0), 0);
   const existingUrls = useMemo(() => new Set(listItems.map((i) => i.url)), [listItems]);
 
   return (
@@ -145,6 +204,21 @@ export function UrlListsPage() {
           <Plus className="w-4 h-4" /> New List
         </button>
       </div>
+
+      {error && (
+        <div className="flex items-start gap-2 rounded-xl border border-error-500/30 bg-error-500/10 px-4 py-3 text-sm text-error-300">
+          <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
+          <span className="flex-1">{error}</span>
+          <button onClick={() => setError('')} className="text-error-400/70 hover:text-error-300"><X className="h-4 w-4" /></button>
+        </div>
+      )}
+      {notice && (
+        <div className="flex items-start gap-2 rounded-xl border border-primary-500/30 bg-primary-500/10 px-4 py-3 text-sm text-primary-200">
+          <Cloud className="mt-0.5 h-4 w-4 shrink-0" />
+          <span className="flex-1">{notice}</span>
+          <button onClick={() => setNotice('')} className="text-primary-400/70 hover:text-primary-200"><X className="h-4 w-4" /></button>
+        </div>
+      )}
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
         {/* Lists sidebar */}
@@ -219,6 +293,15 @@ export function UrlListsPage() {
                     <Pencil className="w-3.5 h-3.5" />
                   </button>
                   <button
+                    onClick={saveListToR2}
+                    disabled={saving || listItems.length === 0 || savableCount === 0}
+                    title={savableCount === 0 ? 'Every URL in this list is already in R2' : 'Fetch every URL and store it in R2'}
+                    className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-accent-500 hover:bg-accent-600 text-white text-xs font-medium transition-colors disabled:opacity-40"
+                  >
+                    {saving ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <CloudUpload className="w-3.5 h-3.5" />}
+                    Save all to R2{savableCount > 0 ? ` (${savableCount})` : ''}
+                  </button>
+                  <button
                     onClick={() => setShowAutoImport(true)}
                     className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-gradient-to-r from-primary-500 to-accent-500 hover:from-primary-600 hover:to-accent-600 text-white text-xs font-medium transition-all glow"
                   >
@@ -240,6 +323,23 @@ export function UrlListsPage() {
                   <span className="text-success-400">{listItems.filter((i) => i.status === 'completed').length} done</span>
                   <span className="text-primary-400">{listItems.filter((i) => i.status === 'downloading').length} active</span>
                   <span className="text-dark-500">{listItems.filter((i) => i.status === 'pending').length} pending</span>
+                  {listItems.some((i) => i.status === 'failed') && (
+                    <span className="text-error-400">{listItems.filter((i) => i.status === 'failed').length} failed</span>
+                  )}
+                  {inR2.length > 0 && (
+                    <span className="flex items-center gap-1 text-accent-400">
+                      <Cloud className="w-3 h-3" /> {inR2.length} in R2 · {formatBytes(savedBytes)}
+                    </span>
+                  )}
+                  {inR2.some((i) => i.r2_url) && (
+                    <button
+                      onClick={() => copyUrl(inR2.map((i) => i.r2_url).filter(Boolean).join('\n'), 'all-r2')}
+                      className="ml-auto flex items-center gap-1 rounded px-1.5 py-0.5 text-dark-400 hover:bg-dark-800 hover:text-white transition-colors"
+                    >
+                      {copiedId === 'all-r2' ? <Check className="w-3 h-3 text-success-400" /> : <Copy className="w-3 h-3" />}
+                      Copy all R2 URLs
+                    </button>
+                  )}
                 </div>
               )}
 
@@ -272,26 +372,46 @@ export function UrlListsPage() {
                         <SourceBadge source={source} />
                         <div className="flex-1 min-w-0">
                           <p className="text-sm text-white truncate font-medium">{item.label || item.url}</p>
-                          <p className="text-[10px] text-dark-500 truncate font-mono">{item.url}</p>
+                          {item.r2_url ? (
+                            <p className="text-[10px] text-accent-300 truncate font-mono">{item.r2_url}</p>
+                          ) : (
+                            <p className="text-[10px] text-dark-500 truncate font-mono">{item.url}</p>
+                          )}
+                          {item.status === 'failed' && item.error && (
+                            <p className="text-[10px] text-error-400 truncate">{item.error}</p>
+                          )}
                         </div>
-                        <span className={`text-[10px] px-1.5 py-0.5 rounded-full font-medium ${getStatusColor(item.status)} shrink-0`}>
-                          {item.status}
+                        {item.file_size ? (
+                          <span className="text-[10px] text-dark-500 shrink-0 tabular-nums">{formatBytes(item.file_size)}</span>
+                        ) : null}
+                        <span className={`flex items-center gap-1 text-[10px] px-1.5 py-0.5 rounded-full font-medium ${getStatusColor(item.status)} shrink-0`}>
+                          {(item.status === 'downloading' || item.status === 'queued') && <Loader2 className="w-2.5 h-2.5 animate-spin" />}
+                          {item.status === 'downloading' ? 'saving' : item.status}
                         </span>
                         <button
-                          onClick={() => copyUrl(item.url, item.id)}
+                          onClick={() => copyUrl(item.r2_url || item.url, item.id)}
+                          title={item.r2_url ? 'Copy the R2 URL' : 'Copy the source URL'}
                           className="p-1.5 rounded-lg hover:bg-dark-700 text-dark-500 hover:text-white transition-colors shrink-0"
                         >
                           {copiedId === item.id ? <Check className="w-3.5 h-3.5 text-success-400" /> : <Copy className="w-3.5 h-3.5" />}
                         </button>
-                        <a href={item.url} target="_blank" rel="noreferrer" className="p-1.5 rounded-lg hover:bg-dark-700 text-dark-500 hover:text-white transition-colors shrink-0">
+                        <a
+                          href={item.r2_url || item.url}
+                          target="_blank"
+                          rel="noreferrer"
+                          title={item.r2_url ? 'Open the file in R2' : 'Open the source URL'}
+                          className="p-1.5 rounded-lg hover:bg-dark-700 text-dark-500 hover:text-white transition-colors shrink-0"
+                        >
                           <ExternalLink className="w-3.5 h-3.5" />
                         </a>
-                        {item.status === 'pending' && (
+                        {item.status !== 'downloading' && item.status !== 'queued' && (
                           <button
-                            onClick={() => queueItemDownload(item)}
-                            className="p-1.5 rounded-lg hover:bg-primary-500/20 text-dark-500 hover:text-primary-400 transition-colors shrink-0"
+                            onClick={() => saveItemsToR2([item.id])}
+                            disabled={saving}
+                            title={item.r2_key ? 'Fetch it again and replace the copy in R2' : 'Fetch this URL and store it in R2'}
+                            className="p-1.5 rounded-lg hover:bg-accent-500/20 text-dark-500 hover:text-accent-400 transition-colors shrink-0 disabled:opacity-40"
                           >
-                            <Download className="w-3.5 h-3.5" />
+                            {item.r2_key ? <Cloud className="w-3.5 h-3.5 text-accent-400/70" /> : <CloudUpload className="w-3.5 h-3.5" />}
                           </button>
                         )}
                         <button
