@@ -71,6 +71,79 @@ export function testR2Connection() {
   return callBackend<R2TestResult>('/api/r2/test');
 }
 
+export interface R2UploadResult {
+  key: string;
+  /** Null when no public URL is configured on the bucket -- the file is in R2, but not reachable. */
+  url: string | null;
+  size: number | null;
+}
+
+/**
+ * Sends a video straight from the browser to the backend, which streams it on
+ * into R2 and answers with the public URL. XHR rather than fetch(), because
+ * only XHR reports upload progress, and a video is big enough to need a bar.
+ */
+export function uploadToR2(
+  file: File,
+  options: {
+    folder?: string;
+    onProgress?: (loaded: number, total: number) => void;
+    signal?: AbortSignal;
+  } = {}
+): Promise<R2UploadResult> {
+  return new Promise((resolve, reject) => {
+    if (!BACKEND_URL) {
+      reject(new Error('Backend URL is not configured (VITE_TELEGRAM_BACKEND_URL).'));
+      return;
+    }
+    const query = new URLSearchParams({ name: file.name, folder: options.folder || 'uploads' });
+    const xhr = new XMLHttpRequest();
+    xhr.open('POST', `${BACKEND_URL}/api/r2/upload?${query}`);
+    xhr.setRequestHeader('Content-Type', file.type || 'application/octet-stream');
+    xhr.setRequestHeader('x-api-key', BACKEND_KEY || '');
+
+    xhr.upload.onprogress = (e) => options.onProgress?.(e.loaded, e.total || file.size);
+    xhr.onerror = () => reject(new Error('The upload could not reach the backend.'));
+    xhr.onabort = () => reject(new Error('Upload cancelled.'));
+    xhr.onload = () => {
+      let data: Partial<R2UploadResult> & { error?: string; success?: boolean } = {};
+      try {
+        data = JSON.parse(xhr.responseText);
+      } catch {
+        data = {};
+      }
+      if (xhr.status < 200 || xhr.status >= 300 || data.success === false) {
+        reject(new Error(data.error || `Upload failed (HTTP ${xhr.status}).`));
+        return;
+      }
+      resolve({ key: data.key || '', url: data.url ?? null, size: data.size ?? file.size });
+    };
+
+    options.signal?.addEventListener('abort', () => xhr.abort(), { once: true });
+    xhr.send(file);
+  });
+}
+
+export interface R2Object {
+  key: string;
+  size: number;
+  last_modified: string | null;
+  url: string | null;
+}
+
+/** Lists what is really in the bucket under a prefix, newest first. */
+export function listR2Objects(prefix = '', limit = 100) {
+  return callBackend<{ bucket: string; objects: R2Object[]; total: number }>('/api/r2/objects', {
+    prefix,
+    limit,
+  });
+}
+
+/** Removes one object from the bucket. */
+export function deleteR2Object(key: string) {
+  return callBackend('/api/r2/delete', { key });
+}
+
 export interface BackendHealth {
   telegram: boolean;
   r2: boolean;

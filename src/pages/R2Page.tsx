@@ -15,6 +15,7 @@ import {
 } from 'lucide-react';
 import { supabase } from '@/lib/supabase';
 import { backendConfigured, testR2Connection } from '@/lib/backend';
+import { R2Uploader } from '@/components/R2Uploader';
 import type { R2Settings, Episode } from '@/lib/types';
 import { formatBytes, formatTimeAgo } from '@/lib/utils';
 
@@ -248,6 +249,9 @@ export function R2Page() {
           </button>
         </div>
       </div>
+
+      {/* Upload videos by hand, straight into the bucket */}
+      <R2Uploader publicUrl={settings?.public_url || ''} />
 
       {/* Files in R2 */}
       {connected && episodes.length > 0 && (

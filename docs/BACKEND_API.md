@@ -240,6 +240,60 @@ Verifies the stored R2 credentials by listing the bucket, and sets
 `object_count` and `total_bytes` are optional — the R2 page falls back to what
 it knows from the `episodes` table when they are absent.
 
+### `POST /api/r2/upload?name=<file name>&folder=<folder>`
+Uploads one video from the control panel into R2 and answers with its public
+URL. **The request body is the raw file, not JSON and not a multipart form**,
+with `Content-Type` set to the file's own type (`video/mp4`, …). The backend
+streams the body straight into R2, so nothing is buffered in memory and a
+multi-gigabyte file is fine.
+
+`folder` is optional and defaults to `uploads`. The key is built from it as
+`<folder>/<YYYYMMDD>-<file name>-<random>.<ext>`, so two uploads of the same
+file name never overwrite each other.
+
+```json
+{
+  "success": true,
+  "key": "uploads/20260908-my-video-a1b2c3.mp4",
+  "url": "https://cdn.example.com/uploads/20260908-my-video-a1b2c3.mp4",
+  "size": 734003200
+}
+```
+
+`url` is `null` when no **Public URL** is configured on the R2 settings — the
+file is in the bucket, but R2 has no public address to hand back.
+
+### `POST /api/r2/objects`
+Lists what is really in the bucket, newest first, so the panel can show URLs
+for files that are not in the `episodes` table.
+
+```json
+{ "prefix": "uploads/", "limit": 50 }
+```
+
+```json
+{
+  "success": true,
+  "bucket": "vidoes-ep",
+  "total": 3,
+  "objects": [
+    {
+      "key": "uploads/20260908-my-video-a1b2c3.mp4",
+      "size": 734003200,
+      "last_modified": "2026-09-08T04:11:02.000Z",
+      "url": "https://cdn.example.com/uploads/20260908-my-video-a1b2c3.mp4"
+    }
+  ]
+}
+```
+
+### `POST /api/r2/delete`
+Removes one object, for undoing a mistaken upload.
+
+```json
+{ "key": "uploads/20260908-my-video-a1b2c3.mp4" }
+```
+
 ---
 
 ## Speed and rate-limit tuning
