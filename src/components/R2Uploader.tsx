@@ -45,9 +45,15 @@ interface UploadItem {
 
 const nextId = () => Math.random().toString(36).slice(2);
 
-/** Keeps only letters, numbers, spaces, dots and dashes, then turns spaces into dashes. */
+/**
+ * Keeps letters, combining marks, numbers, spaces, dots and dashes, then turns
+ * spaces into dashes. The mark class matters for Khmer (and Vietnamese,
+ * Devanagari, ...): most vowels and the subscript sign are combining marks
+ * attached to a letter, not letters themselves, so dropping them silently
+ * corrupted show/episode names typed in those scripts into the wrong word.
+ */
 function slugSegment(value: string): string {
-  const cleaned = value.replace(/[^\p{L}\p{N}\-. ]+/gu, '').trim();
+  const cleaned = value.replace(/[^\p{L}\p{M}\p{N}\-. ]+/gu, '').trim();
   return cleaned.replace(/\s+/g, '-');
 }
 
