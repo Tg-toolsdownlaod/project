@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   UploadCloud,
   Loader2,
@@ -11,6 +11,9 @@ import {
   Trash2,
   RefreshCw,
   FileVideo,
+  Clapperboard,
+  Hash,
+  Layers,
 } from 'lucide-react';
 import {
   backendConfigured,
@@ -22,6 +25,7 @@ import {
 import { formatBytes, formatTimeAgo } from '@/lib/utils';
 
 type ItemStatus = 'pending' | 'uploading' | 'done' | 'error';
+type NameMode = 'episode' | 'label';
 
 interface UploadItem {
   id: string;
@@ -29,25 +33,106 @@ interface UploadItem {
   status: ItemStatus;
   loaded: number;
   total: number;
-  key?: string;
+  key: string;
+  title: string;
   url?: string | null;
   error?: string;
 }
 
 const nextId = () => Math.random().toString(36).slice(2);
 
+/** Keeps only letters, numbers, spaces, dots and dashes, then turns spaces into dashes. */
+function slugSegment(value: string): string {
+  const cleaned = value.replace(/[^\p{L}\p{N}\-. ]+/gu, '').trim();
+  return cleaned.replace(/\s+/g, '-');
+}
+
+function extOf(fileName: string): string {
+  const dot = fileName.lastIndexOf('.');
+  return dot > 0 ? fileName.slice(dot + 1).toLowerCase().replace(/[^a-z0-9]/g, '') : '';
+}
+
+function stripExt(fileName: string): string {
+  const dot = fileName.lastIndexOf('.');
+  return dot > 0 ? fileName.slice(0, dot) : fileName;
+}
+
+const pad3 = (n: number) => String(Math.max(0, n)).padStart(3, '0');
+
+interface NameFields {
+  show: string;
+  season: string;
+  mode: NameMode;
+  episodeStart: string;
+  label: string;
+}
+
+/** Turns the show/season/episode fields into a readable R2 key + display title. */
+function planName(
+  fields: NameFields,
+  fileName: string,
+  index: number,
+  multiple: boolean
+): { key: string; title: string } {
+  const showSlug = slugSegment(fields.show) || 'uploads';
+  const seasonSlug = fields.season.trim() ? slugSegment(fields.season) : '';
+  const ext = extOf(fileName) || 'mp4';
+
+  let namePart: string;
+  let titleTail: string;
+  if (fields.mode === 'episode') {
+    const start = Number.parseInt(fields.episodeStart, 10);
+    const epNum = (Number.isFinite(start) ? start : 1) + index;
+    namePart = `EP${pad3(epNum)}`;
+    titleTail = `Episode ${epNum}`;
+  } else {
+    const base = fields.label.trim() ? slugSegment(fields.label) : slugSegment(stripExt(fileName)) || 'video';
+    namePart = multiple ? `${base}-${index + 1}` : base;
+    titleTail = fields.label.trim()
+      ? multiple
+        ? `${fields.label.trim()} ${index + 1}`
+        : fields.label.trim()
+      : stripExt(fileName);
+  }
+
+  const dir = [showSlug, seasonSlug].filter(Boolean).join('/');
+  const key = `${dir}/${namePart}.${ext}`;
+  const title = [fields.show.trim() || 'Untitled', fields.season.trim(), titleTail]
+    .filter(Boolean)
+    .join(' · ');
+  return { key, title };
+}
+
+/** Turns a key already in R2 back into a readable title, for the browse list. */
+function describeStoredKey(key: string): { title: string; badge?: string } {
+  const parts = key.split('/');
+  const fileWithExt = parts[parts.length - 1] || key;
+  const dot = fileWithExt.lastIndexOf('.');
+  const base = dot > 0 ? fileWithExt.slice(0, dot) : fileWithExt;
+  const middle = parts.slice(1, -1);
+  const epMatch = /^EP(\d+)$/i.exec(base);
+  const title = epMatch ? `Episode ${Number.parseInt(epMatch[1], 10)}` : base.replace(/-/g, ' ');
+  return { title, badge: middle.join(' / ') || undefined };
+}
+
 /**
- * Picks videos in the panel and puts them in R2, one after another, then hands
- * back the public URL of each — the whole point of the card, so the URL is
- * copyable the moment the upload lands, without a trip to the Cloudflare
- * dashboard.
+ * Picks videos in the panel and puts them in R2 under a readable path built
+ * from a show name, an optional season/arc, and an episode number or label --
+ * so every key and public URL says on its own which show and which episode it
+ * is, instead of a random-suffixed filename. Re-uploading the same show +
+ * episode overwrites it in place rather than piling up duplicates.
  *
  * Uploads run one at a time on purpose: several videos at once share the same
  * uplink and only make every one of them slower, while the backend streams
  * each request straight through to R2.
  */
 export function R2Uploader({ publicUrl }: { publicUrl: string }) {
-  const [folder, setFolder] = useState('uploads');
+  const [show, setShow] = useState('');
+  const [season, setSeason] = useState('');
+  const [mode, setMode] = useState<NameMode>('episode');
+  const [episodeStart, setEpisodeStart] = useState('1');
+  const [label, setLabel] = useState('');
+
   const [items, setItems] = useState<UploadItem[]>([]);
   const [dragging, setDragging] = useState(false);
   const [copied, setCopied] = useState('');
@@ -57,6 +142,14 @@ export function R2Uploader({ publicUrl }: { publicUrl: string }) {
   const inputRef = useRef<HTMLInputElement>(null);
   const runningRef = useRef(false);
   const queueRef = useRef<UploadItem[]>([]);
+
+  const showSlug = slugSegment(show) || 'uploads';
+  const browsePrefix = `${showSlug}/`;
+
+  const preview = useMemo(
+    () => planName({ show, season, mode, episodeStart, label }, 'video.mp4', 0, false),
+    [show, season, mode, episodeStart, label]
+  );
 
   const patch = useCallback((id: string, changes: Partial<UploadItem>) => {
     setItems((prev) => prev.map((it) => (it.id === id ? { ...it, ...changes } : it)));
@@ -68,15 +161,15 @@ export function R2Uploader({ publicUrl }: { publicUrl: string }) {
     setListing(true);
     setListError('');
     try {
-      const result = await listR2Objects(folder ? `${folder.replace(/^\/+|\/+$/g, '')}/` : '', 50);
+      const result = await listR2Objects(browsePrefix, 50);
       setObjects(result.objects || []);
     } catch (err) {
       setListError(err instanceof Error ? err.message : 'Could not list the bucket.');
     }
     setListing(false);
-  }, [folder]);
+  }, [browsePrefix]);
 
-  // Debounced: the folder box refreshes the listing, but not once per keystroke.
+  // Debounced: the show name refreshes the listing, but not once per keystroke.
   useEffect(() => {
     const timer = setTimeout(() => void refreshObjects(), 400);
     return () => clearTimeout(timer);
@@ -92,13 +185,13 @@ export function R2Uploader({ publicUrl }: { publicUrl: string }) {
       patch(next.id, { status: 'uploading', loaded: 0 });
       try {
         const result = await uploadToR2(next.file, {
-          folder,
+          key: next.key,
           onProgress: (loaded, total) => patch(next.id, { loaded, total: total || next.file.size }),
         });
         patch(next.id, {
           status: 'done',
           loaded: next.file.size,
-          key: result.key,
+          key: result.key || next.key,
           url: result.url,
         });
       } catch (err) {
@@ -110,24 +203,31 @@ export function R2Uploader({ publicUrl }: { publicUrl: string }) {
     }
     runningRef.current = false;
     void refreshObjects();
-  }, [folder, patch, refreshObjects]);
+  }, [patch, refreshObjects]);
 
   const addFiles = useCallback(
     (files: FileList | File[] | null) => {
       const chosen = Array.from(files || []);
       if (!chosen.length) return;
-      const added: UploadItem[] = chosen.map((file) => ({
-        id: nextId(),
-        file,
-        status: 'pending',
-        loaded: 0,
-        total: file.size,
-      }));
+      const fields: NameFields = { show, season, mode, episodeStart, label };
+      const multiple = chosen.length > 1;
+      const added: UploadItem[] = chosen.map((file, index) => {
+        const { key, title } = planName(fields, file.name, index, multiple);
+        return {
+          id: nextId(),
+          file,
+          status: 'pending',
+          loaded: 0,
+          total: file.size,
+          key,
+          title,
+        };
+      });
       setItems((prev) => [...prev, ...added]);
       queueRef.current = [...queueRef.current, ...added];
       void drain();
     },
-    [drain]
+    [show, season, mode, episodeStart, label, drain]
   );
 
   const copy = async (text: string, id: string) => {
@@ -159,14 +259,84 @@ export function R2Uploader({ publicUrl }: { publicUrl: string }) {
         <h3 className="text-sm font-semibold text-white flex items-center gap-2">
           <UploadCloud className="w-4 h-4 text-accent-400" /> Upload videos to R2
         </h3>
-        <div className="flex items-center gap-2">
-          <label className="text-xs text-dark-500">Folder</label>
-          <input
-            value={folder}
-            onChange={(e) => setFolder(e.target.value)}
-            placeholder="uploads"
-            className="w-40 bg-dark-800 border border-dark-700 rounded-lg px-2.5 py-1.5 text-xs text-white placeholder-dark-600 font-mono outline-none focus:border-primary-500 transition-colors"
-          />
+      </div>
+
+      {/* Naming: what show, what season/arc, and which episode this is */}
+      <div className="rounded-lg border border-dark-800 bg-dark-950/40 p-4 mb-4">
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+          <div>
+            <label className="text-xs text-dark-400 font-medium mb-1.5 flex items-center gap-1.5">
+              <Clapperboard className="w-3.5 h-3.5" /> Show / Series
+            </label>
+            <input
+              value={show}
+              onChange={(e) => setShow(e.target.value)}
+              placeholder="Naruto Shippuden"
+              className="w-full bg-dark-800 border border-dark-700 rounded-lg px-3 py-2 text-sm text-white placeholder-dark-600 outline-none focus:border-primary-500 transition-colors"
+            />
+          </div>
+          <div>
+            <label className="text-xs text-dark-400 font-medium mb-1.5 flex items-center gap-1.5">
+              <Layers className="w-3.5 h-3.5" /> Season / Arc <span className="text-dark-600">(optional)</span>
+            </label>
+            <input
+              value={season}
+              onChange={(e) => setSeason(e.target.value)}
+              placeholder="Season 1"
+              className="w-full bg-dark-800 border border-dark-700 rounded-lg px-3 py-2 text-sm text-white placeholder-dark-600 outline-none focus:border-primary-500 transition-colors"
+            />
+          </div>
+        </div>
+
+        <div className="flex flex-col sm:flex-row gap-3 mt-3">
+          <div className="flex rounded-lg bg-dark-800 p-1 shrink-0">
+            <button
+              onClick={() => setMode('episode')}
+              className={`px-3 py-1.5 rounded-md text-xs font-medium transition-colors flex items-center gap-1.5 ${
+                mode === 'episode' ? 'bg-primary-500 text-white' : 'text-dark-400 hover:text-white'
+              }`}
+            >
+              <Hash className="w-3.5 h-3.5" /> Episode
+            </button>
+            <button
+              onClick={() => setMode('label')}
+              className={`px-3 py-1.5 rounded-md text-xs font-medium transition-colors ${
+                mode === 'label' ? 'bg-primary-500 text-white' : 'text-dark-400 hover:text-white'
+              }`}
+            >
+              Movie / Extra
+            </button>
+          </div>
+
+          {mode === 'episode' ? (
+            <input
+              type="number"
+              min={0}
+              value={episodeStart}
+              onChange={(e) => setEpisodeStart(e.target.value)}
+              placeholder="Episode #"
+              className="w-full sm:w-40 bg-dark-800 border border-dark-700 rounded-lg px-3 py-2 text-sm text-white placeholder-dark-600 outline-none focus:border-primary-500 transition-colors"
+            />
+          ) : (
+            <input
+              value={label}
+              onChange={(e) => setLabel(e.target.value)}
+              placeholder="Full Movie, OVA 1, Trailer…"
+              className="w-full bg-dark-800 border border-dark-700 rounded-lg px-3 py-2 text-sm text-white placeholder-dark-600 outline-none focus:border-primary-500 transition-colors"
+            />
+          )}
+        </div>
+
+        {mode === 'episode' && (
+          <p className="text-[11px] text-dark-500 mt-2">
+            Dropping several files at once numbers them EP{pad3(Number.parseInt(episodeStart, 10) || 1)},{' '}
+            EP{pad3((Number.parseInt(episodeStart, 10) || 1) + 1)}, … in the order you picked them.
+          </p>
+        )}
+
+        <div className="mt-3 flex items-start gap-2 rounded-lg bg-dark-900 border border-dark-800 px-3 py-2">
+          <span className="text-[10px] uppercase tracking-wide text-dark-500 shrink-0 mt-0.5">Will save as</span>
+          <code className="text-[11px] text-primary-300 break-all">{preview.key}</code>
         </div>
       </div>
 
@@ -211,8 +381,7 @@ export function R2Uploader({ publicUrl }: { publicUrl: string }) {
         <UploadCloud className="w-7 h-7 text-dark-500" />
         <p className="text-sm text-white font-medium">Drop videos here, or click to choose</p>
         <p className="text-[11px] text-dark-500">
-          Uploaded straight into <span className="font-mono">{folder || 'uploads'}/</span> — the
-          public URL appears as soon as each file lands.
+          The public URL is ready the moment each file lands.
         </p>
         <input
           ref={inputRef}
@@ -272,13 +441,13 @@ export function R2Uploader({ publicUrl }: { publicUrl: string }) {
                     <FileVideo className="w-4 h-4 text-dark-500 shrink-0" />
                   )}
                   <div className="flex-1 min-w-0">
-                    <p className="text-sm text-white truncate font-medium">{item.file.name}</p>
-                    <p className="text-[10px] text-dark-500">
+                    <p className="text-sm text-white truncate font-medium">{item.title}</p>
+                    <p className="text-[10px] text-dark-500 font-mono truncate">
                       {item.status === 'uploading'
-                        ? `${formatBytes(item.loaded)} of ${formatBytes(item.total)} · ${percent}%`
+                        ? `${item.key} · ${formatBytes(item.loaded)} of ${formatBytes(item.total)} · ${percent}%`
                         : item.status === 'error'
                           ? item.error
-                          : formatBytes(item.file.size)}
+                          : item.key}
                     </p>
                   </div>
                   {item.status === 'done' && item.url && (
@@ -327,11 +496,11 @@ export function R2Uploader({ publicUrl }: { publicUrl: string }) {
         </div>
       )}
 
-      {/* What is already in that folder, read back from the bucket itself. */}
+      {/* What is already in R2 for this show, read back from the bucket itself. */}
       <div className="mt-5 border-t border-dark-800 pt-4">
         <div className="flex items-center justify-between mb-3">
           <h4 className="text-xs font-semibold text-dark-300">
-            In <span className="font-mono">{folder || '/'}</span>
+            Already in <span className="font-mono text-dark-200">{showSlug}/</span>
           </h4>
           <button
             onClick={() => void refreshObjects()}
@@ -353,52 +522,63 @@ export function R2Uploader({ publicUrl }: { publicUrl: string }) {
           <p className="text-[11px] text-dark-500">Nothing here yet.</p>
         ) : (
           <div className="space-y-1.5 max-h-72 overflow-y-auto">
-            {objects.map((obj) => (
-              <div
-                key={obj.key}
-                className="flex items-center gap-3 p-2.5 rounded-lg bg-dark-800/30 hover:bg-dark-800/60 transition-colors"
-              >
-                <FileVideo className="w-4 h-4 text-dark-500 shrink-0" />
-                <div className="flex-1 min-w-0">
-                  <p className="text-xs text-white truncate font-mono">{obj.key}</p>
-                  <p className="text-[10px] text-dark-500">
-                    {formatBytes(obj.size)}
-                    {obj.last_modified ? ` · ${formatTimeAgo(obj.last_modified)}` : ''}
-                  </p>
-                </div>
-                {obj.url && (
-                  <>
-                    <button
-                      onClick={() => copy(obj.url as string, obj.key)}
-                      title="Copy URL"
-                      className="p-1.5 rounded-lg hover:bg-dark-700 text-dark-500 hover:text-white transition-colors"
-                    >
-                      {copied === obj.key ? (
-                        <Check className="w-3.5 h-3.5 text-success-400" />
-                      ) : (
-                        <Copy className="w-3.5 h-3.5" />
-                      )}
-                    </button>
-                    <a
-                      href={obj.url}
-                      target="_blank"
-                      rel="noreferrer"
-                      title="Open"
-                      className="p-1.5 rounded-lg hover:bg-dark-700 text-dark-500 hover:text-white transition-colors"
-                    >
-                      <ExternalLink className="w-3.5 h-3.5" />
-                    </a>
-                  </>
-                )}
-                <button
-                  onClick={() => void removeObject(obj.key)}
-                  title="Delete from R2"
-                  className="p-1.5 rounded-lg hover:bg-error-500/20 text-dark-500 hover:text-error-400 transition-colors"
+            {objects.map((obj) => {
+              const described = describeStoredKey(obj.key);
+              return (
+                <div
+                  key={obj.key}
+                  className="flex items-center gap-3 p-2.5 rounded-lg bg-dark-800/30 hover:bg-dark-800/60 transition-colors"
                 >
-                  <Trash2 className="w-3.5 h-3.5" />
-                </button>
-              </div>
-            ))}
+                  <FileVideo className="w-4 h-4 text-dark-500 shrink-0" />
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-center gap-2">
+                      <p className="text-xs text-white truncate font-medium">{described.title}</p>
+                      {described.badge && (
+                        <span className="shrink-0 text-[10px] px-1.5 py-0.5 rounded bg-dark-700 text-dark-300">
+                          {described.badge}
+                        </span>
+                      )}
+                    </div>
+                    <p className="text-[10px] text-dark-500 font-mono truncate">{obj.key}</p>
+                    <p className="text-[10px] text-dark-500">
+                      {formatBytes(obj.size)}
+                      {obj.last_modified ? ` · ${formatTimeAgo(obj.last_modified)}` : ''}
+                    </p>
+                  </div>
+                  {obj.url && (
+                    <>
+                      <button
+                        onClick={() => copy(obj.url as string, obj.key)}
+                        title="Copy URL"
+                        className="p-1.5 rounded-lg hover:bg-dark-700 text-dark-500 hover:text-white transition-colors"
+                      >
+                        {copied === obj.key ? (
+                          <Check className="w-3.5 h-3.5 text-success-400" />
+                        ) : (
+                          <Copy className="w-3.5 h-3.5" />
+                        )}
+                      </button>
+                      <a
+                        href={obj.url}
+                        target="_blank"
+                        rel="noreferrer"
+                        title="Open"
+                        className="p-1.5 rounded-lg hover:bg-dark-700 text-dark-500 hover:text-white transition-colors"
+                      >
+                        <ExternalLink className="w-3.5 h-3.5" />
+                      </a>
+                    </>
+                  )}
+                  <button
+                    onClick={() => void removeObject(obj.key)}
+                    title="Delete from R2"
+                    className="p-1.5 rounded-lg hover:bg-error-500/20 text-dark-500 hover:text-error-400 transition-colors"
+                  >
+                    <Trash2 className="w-3.5 h-3.5" />
+                  </button>
+                </div>
+              );
+            })}
           </div>
         )}
       </div>
