@@ -35,6 +35,10 @@ interface UploadItem {
   total: number;
   key: string;
   title: string;
+  show: string;
+  season: string;
+  episodeNumber?: number;
+  label?: string;
   url?: string | null;
   error?: string;
 }
@@ -67,32 +71,40 @@ interface NameFields {
   label: string;
 }
 
+interface NamePlan {
+  key: string;
+  title: string;
+  /** Forwarded to the backend so it can file the upload as an episode. */
+  show: string;
+  season: string;
+  episodeNumber?: number;
+  label?: string;
+}
+
 /** Turns the show/season/episode fields into a readable R2 key + display title. */
-function planName(
-  fields: NameFields,
-  fileName: string,
-  index: number,
-  multiple: boolean
-): { key: string; title: string } {
+function planName(fields: NameFields, fileName: string, index: number, multiple: boolean): NamePlan {
   const showSlug = slugSegment(fields.show) || 'uploads';
   const seasonSlug = fields.season.trim() ? slugSegment(fields.season) : '';
   const ext = extOf(fileName) || 'mp4';
 
   let namePart: string;
   let titleTail: string;
+  let episodeNumber: number | undefined;
+  let label: string | undefined;
   if (fields.mode === 'episode') {
     const start = Number.parseInt(fields.episodeStart, 10);
-    const epNum = (Number.isFinite(start) ? start : 1) + index;
-    namePart = `EP${pad3(epNum)}`;
-    titleTail = `Episode ${epNum}`;
+    episodeNumber = (Number.isFinite(start) ? start : 1) + index;
+    namePart = `EP${pad3(episodeNumber)}`;
+    titleTail = `Episode ${episodeNumber}`;
   } else {
     const base = fields.label.trim() ? slugSegment(fields.label) : slugSegment(stripExt(fileName)) || 'video';
     namePart = multiple ? `${base}-${index + 1}` : base;
-    titleTail = fields.label.trim()
+    label = fields.label.trim()
       ? multiple
         ? `${fields.label.trim()} ${index + 1}`
         : fields.label.trim()
       : stripExt(fileName);
+    titleTail = label;
   }
 
   const dir = [showSlug, seasonSlug].filter(Boolean).join('/');
@@ -100,7 +112,7 @@ function planName(
   const title = [fields.show.trim() || 'Untitled', fields.season.trim(), titleTail]
     .filter(Boolean)
     .join(' · ');
-  return { key, title };
+  return { key, title, show: fields.show.trim(), season: fields.season.trim(), episodeNumber, label };
 }
 
 /** Turns a key already in R2 back into a readable title, for the browse list. */
@@ -186,6 +198,10 @@ export function R2Uploader({ publicUrl }: { publicUrl: string }) {
       try {
         const result = await uploadToR2(next.file, {
           key: next.key,
+          show: next.show,
+          season: next.season,
+          episode: next.episodeNumber,
+          label: next.label,
           onProgress: (loaded, total) => patch(next.id, { loaded, total: total || next.file.size }),
         });
         patch(next.id, {
@@ -212,15 +228,14 @@ export function R2Uploader({ publicUrl }: { publicUrl: string }) {
       const fields: NameFields = { show, season, mode, episodeStart, label };
       const multiple = chosen.length > 1;
       const added: UploadItem[] = chosen.map((file, index) => {
-        const { key, title } = planName(fields, file.name, index, multiple);
+        const plan = planName(fields, file.name, index, multiple);
         return {
           id: nextId(),
           file,
           status: 'pending',
           loaded: 0,
           total: file.size,
-          key,
-          title,
+          ...plan,
         };
       });
       setItems((prev) => [...prev, ...added]);
