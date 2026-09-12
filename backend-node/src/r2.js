@@ -4,6 +4,7 @@ import { createReadStream } from "node:fs";
 import {
   DeleteObjectCommand,
   HeadBucketCommand,
+  HeadObjectCommand,
   ListObjectsV2Command,
   S3Client,
 } from "@aws-sdk/client-s3";
@@ -176,6 +177,18 @@ export async function remove(key) {
   await client.send(new DeleteObjectCommand({ Bucket: bucket, Key: key }));
 }
 
+/** Existence + size check -- used by s3migrate.js to skip already-migrated objects. */
+export async function headObject(key) {
+  const { client, bucket } = await clientAndBucket();
+  try {
+    const result = await client.send(new HeadObjectCommand({ Bucket: bucket, Key: key }));
+    return { exists: true, size: result.ContentLength ?? 0 };
+  } catch (err) {
+    if (err?.$metadata?.httpStatusCode === 404 || err?.name === "NotFound") return { exists: false, size: 0 };
+    throw err;
+  }
+}
+
 /**
  * An object key for a file uploaded by hand from the panel. The random suffix
  * is what keeps two people uploading "video.mp4" from overwriting each other.
@@ -192,7 +205,7 @@ export function buildUploadKey(folder, fileName) {
 }
 
 /** Slugs each segment of a folder path, dropping empty and dot-only ones. */
-function slugPath(value) {
+export function slugPath(value) {
   return String(value || "")
     .split("/")
     .map((part) => part.trim())
@@ -213,6 +226,9 @@ export function buildKey(pattern, group, topic, ep, fileName) {
 }
 
 function slug(value) {
-  const cleaned = (value || "").replace(/[^\p{L}\p{N}\-. ]+/gu, "").trim();
+  // \p{M} keeps combining marks -- Khmer (and Vietnamese, Devanagari, ...)
+  // spell most vowels and the subscript sign as marks attached to a letter,
+  // so dropping them silently corrupted non-Latin names into the wrong word.
+  const cleaned = (value || "").replace(/[^\p{L}\p{M}\p{N}\-. ]+/gu, "").trim();
   return cleaned.replace(/\s+/g, "-") || "untitled";
 }

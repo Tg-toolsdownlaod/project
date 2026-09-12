@@ -21,6 +21,7 @@ import {
   X,
   HardDrive,
   Copy as CopyIcon,
+  ExternalLink,
 } from 'lucide-react';
 import { supabase } from '@/lib/supabase';
 import { backendConfigured, callBackend } from '@/lib/backend';
@@ -445,6 +446,38 @@ function Breadcrumb({ group, topicLabel, onHome, onGroup }: {
         </>
       )}
     </nav>
+  );
+}
+
+/** The R2 URL badge on an episode card: copy or open it without selecting the card. */
+function EpisodeUrlBadge({ url }: { url: string }) {
+  const [copied, setCopied] = useState(false);
+  return (
+    <span className="flex items-center gap-1">
+      <button
+        onClick={(e) => {
+          e.stopPropagation();
+          navigator.clipboard?.writeText(url);
+          setCopied(true);
+          setTimeout(() => setCopied(false), 1500);
+        }}
+        title="Copy URL"
+        className="flex items-center gap-1 rounded-full bg-success-500/10 px-1.5 py-0.5 font-medium text-success-400 transition-colors hover:bg-success-500/20"
+      >
+        {copied ? <Check className="h-2.5 w-2.5" /> : <Cloud className="h-2.5 w-2.5" />}
+        {copied ? 'Copied' : 'Copy URL'}
+      </button>
+      <a
+        href={url}
+        target="_blank"
+        rel="noreferrer"
+        onClick={(e) => e.stopPropagation()}
+        title="Open"
+        className="rounded-full bg-dark-800 px-1.5 py-0.5 text-dark-400 transition-colors hover:text-white"
+      >
+        <ExternalLink className="h-2.5 w-2.5" />
+      </a>
+    </span>
   );
 }
 
@@ -976,10 +1009,14 @@ function EpisodeBrowser({
                     <span>{formatBytes(ep.file_size)}</span>
                     {ep.duration > 0 && <span>{Math.floor(ep.duration / 60)}m</span>}
                     <span className={`rounded-full px-1.5 py-0.5 font-medium ${getStatusColor(ep.status)}`}>{ep.status}</span>
-                    {ep.r2_key && (
-                      <span className="flex items-center gap-1 rounded-full bg-success-500/10 px-1.5 py-0.5 font-medium text-success-400">
-                        <Cloud className="h-2.5 w-2.5" /> in R2
-                      </span>
+                    {ep.r2_url ? (
+                      <EpisodeUrlBadge url={ep.r2_url} />
+                    ) : (
+                      ep.r2_key && (
+                        <span className="flex items-center gap-1 rounded-full bg-success-500/10 px-1.5 py-0.5 font-medium text-success-400">
+                          <Cloud className="h-2.5 w-2.5" /> in R2
+                        </span>
+                      )
                     )}
                   </div>
                 </div>

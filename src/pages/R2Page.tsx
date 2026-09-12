@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import {
   Database,
   Cloud,
@@ -12,16 +12,21 @@ import {
   FileVideo,
   RefreshCw,
   AlertTriangle,
+  Copy,
+  Check,
+  Clapperboard,
 } from 'lucide-react';
 import { supabase } from '@/lib/supabase';
 import { backendConfigured, testR2Connection } from '@/lib/backend';
 import { R2Uploader } from '@/components/R2Uploader';
-import type { R2Settings, Episode } from '@/lib/types';
+import type { R2Settings, Episode, Group, Topic } from '@/lib/types';
 import { formatBytes, formatTimeAgo } from '@/lib/utils';
 
 export function R2Page() {
   const [settings, setSettings] = useState<R2Settings | null>(null);
   const [episodes, setEpisodes] = useState<Episode[]>([]);
+  const [groups, setGroups] = useState<Group[]>([]);
+  const [topics, setTopics] = useState<Topic[]>([]);
   const [saving, setSaving] = useState(false);
   const [connected, setConnected] = useState(false);
   const [loading, setLoading] = useState(true);
@@ -29,6 +34,7 @@ export function R2Page() {
   const [error, setError] = useState('');
   const [notice, setNotice] = useState('');
   const [remoteStats, setRemoteStats] = useState<{ object_count?: number; total_bytes?: number } | null>(null);
+  const [copied, setCopied] = useState('');
 
   useEffect(() => {
     (async () => {
@@ -45,11 +51,53 @@ export function R2Page() {
           connected: false, last_connected_at: null, created_at: '', updated_at: '',
         });
       }
-      const { data: epData } = await supabase.from('episodes').select('*').not('r2_key', 'is', null).order('updated_at', { ascending: false });
+      const [{ data: epData }, { data: groupData }, { data: topicData }] = await Promise.all([
+        supabase.from('episodes').select('*').not('r2_key', 'is', null).order('ep_number', { ascending: true }),
+        supabase.from('groups').select('*'),
+        supabase.from('topics').select('*'),
+      ]);
       setEpisodes((epData as Episode[]) || []);
+      setGroups((groupData as Group[]) || []);
+      setTopics((topicData as Topic[]) || []);
       setLoading(false);
     })();
   }, []);
+
+  const copy = async (text: string, id: string) => {
+    try {
+      await navigator.clipboard.writeText(text);
+      setCopied(id);
+      setTimeout(() => setCopied((c) => (c === id ? '' : c)), 1500);
+    } catch {
+      setCopied('');
+    }
+  };
+
+  /** Groups episodes by show (and season, when set), sorted the same way the show library is. */
+  const shows = useMemo(() => {
+    const groupById = new Map(groups.map((g) => [g.id, g]));
+    const topicById = new Map(topics.map((t) => [t.id, t]));
+    const byGroup = new Map<string, Episode[]>();
+    for (const ep of episodes) {
+      const list = byGroup.get(ep.group_id);
+      if (list) list.push(ep);
+      else byGroup.set(ep.group_id, [ep]);
+    }
+    return Array.from(byGroup.entries())
+      .map(([groupId, eps]) => ({
+        group: groupById.get(groupId),
+        episodes: [...eps].sort((a, b) => {
+          const seasonA = topicById.get(a.topic_id || '')?.title || '';
+          const seasonB = topicById.get(b.topic_id || '')?.title || '';
+          if (seasonA !== seasonB) return seasonA.localeCompare(seasonB);
+          return (a.ep_number ?? 0) - (b.ep_number ?? 0);
+        }),
+        topicById,
+      }))
+      .sort((a, b) => (a.group?.title || '').localeCompare(b.group?.title || ''));
+  }, [episodes, groups, topics]);
+
+  const urlFor = (ep: Episode) => ep.r2_url || (ep.r2_key && settings?.public_url ? `${settings.public_url.replace(/\/+$/, '')}/${ep.r2_key}` : null);
 
   /** Persists the form and returns the row id, or null when the save failed. */
   const handleSave = async (): Promise<string | null> => {
@@ -253,25 +301,69 @@ export function R2Page() {
       {/* Upload videos by hand, straight into the bucket */}
       <R2Uploader publicUrl={settings?.public_url || ''} />
 
-      {/* Files in R2 */}
-      {connected && episodes.length > 0 && (
+      {/* Files in R2, organized by show and episode number instead of a flat key list */}
+      {episodes.length > 0 && (
         <div className="rounded-xl border border-dark-800 bg-dark-900/60 p-5">
           <h3 className="text-sm font-semibold text-white mb-4 flex items-center gap-2">
             <FileVideo className="w-4 h-4 text-accent-400" /> Files in R2 Storage
+            <span className="text-dark-500 font-normal">({episodes.length})</span>
           </h3>
-          <div className="space-y-1.5 max-h-96 overflow-y-auto">
-            {episodes.map((ep) => (
-              <div key={ep.id} className="flex items-center gap-3 p-3 rounded-lg bg-dark-800/30 hover:bg-dark-800/60 transition-colors">
-                <FileVideo className="w-4 h-4 text-dark-500 shrink-0" />
-                <div className="flex-1 min-w-0">
-                  <p className="text-sm text-white truncate font-medium">{ep.r2_key || ep.file_name || `EP${ep.ep_number}`}</p>
-                  <p className="text-[10px] text-dark-500">{formatBytes(ep.file_size)}</p>
+          <div className="space-y-4 max-h-[32rem] overflow-y-auto pr-1">
+            {shows.map(({ group, episodes: eps, topicById }) => (
+              <div key={group?.id || 'unknown'}>
+                <div className="flex items-center gap-2 mb-1.5 px-0.5">
+                  <Clapperboard className="w-3.5 h-3.5 text-primary-400 shrink-0" />
+                  <h4 className="text-xs font-semibold text-white truncate">{group?.title || 'Unknown show'}</h4>
+                  <span className="text-[10px] text-dark-500">{eps.length} episode{eps.length === 1 ? '' : 's'}</span>
                 </div>
-                {ep.r2_key && settings?.public_url && (
-                  <a href={`${settings.public_url}/${ep.r2_key}`} target="_blank" rel="noreferrer" className="p-1.5 rounded-lg hover:bg-dark-700 text-dark-500 hover:text-white transition-colors">
-                    <ExternalLink className="w-3.5 h-3.5" />
-                  </a>
-                )}
+                <div className="space-y-1.5">
+                  {eps.map((ep) => {
+                    const url = urlFor(ep);
+                    const season = topicById.get(ep.topic_id || '')?.title;
+                    const label = ep.ep_number != null ? `Episode ${ep.ep_number}` : ep.title || ep.file_name || 'Untitled';
+                    return (
+                      <div key={ep.id} className="flex items-center gap-3 p-2.5 rounded-lg bg-dark-800/30 hover:bg-dark-800/60 transition-colors">
+                        <FileVideo className="w-4 h-4 text-dark-500 shrink-0" />
+                        <div className="flex-1 min-w-0">
+                          <div className="flex items-center gap-2">
+                            <p className="text-xs text-white truncate font-medium">{label}</p>
+                            {season && (
+                              <span className="shrink-0 text-[10px] px-1.5 py-0.5 rounded bg-dark-700 text-dark-300">
+                                {season}
+                              </span>
+                            )}
+                          </div>
+                          <p className="text-[10px] text-dark-500 font-mono truncate">{ep.r2_key}</p>
+                          <p className="text-[10px] text-dark-500">{formatBytes(ep.file_size)}</p>
+                        </div>
+                        {url && (
+                          <>
+                            <button
+                              onClick={() => void copy(url, ep.id)}
+                              title="Copy URL"
+                              className="p-1.5 rounded-lg hover:bg-dark-700 text-dark-500 hover:text-white transition-colors"
+                            >
+                              {copied === ep.id ? (
+                                <Check className="w-3.5 h-3.5 text-success-400" />
+                              ) : (
+                                <Copy className="w-3.5 h-3.5" />
+                              )}
+                            </button>
+                            <a
+                              href={url}
+                              target="_blank"
+                              rel="noreferrer"
+                              title="Open"
+                              className="p-1.5 rounded-lg hover:bg-dark-700 text-dark-500 hover:text-white transition-colors"
+                            >
+                              <ExternalLink className="w-3.5 h-3.5" />
+                            </a>
+                          </>
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
               </div>
             ))}
           </div>

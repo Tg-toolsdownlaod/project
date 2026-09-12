@@ -86,7 +86,18 @@ export interface R2UploadResult {
 export function uploadToR2(
   file: File,
   options: {
+    /** A full, readable object key (e.g. "naruto/season-1/EP007.mp4"). Takes priority over `folder`. */
+    key?: string;
     folder?: string;
+    /**
+     * When set, the backend also files this upload as an episode (see
+     * library.js) so it shows up in Groups/Downloads next to videos pulled
+     * from Telegram -- grouped by show, sorted by episode number.
+     */
+    show?: string;
+    season?: string;
+    episode?: number;
+    label?: string;
     onProgress?: (loaded: number, total: number) => void;
     signal?: AbortSignal;
   } = {}
@@ -96,7 +107,13 @@ export function uploadToR2(
       reject(new Error('Backend URL is not configured (VITE_TELEGRAM_BACKEND_URL).'));
       return;
     }
-    const query = new URLSearchParams({ name: file.name, folder: options.folder || 'uploads' });
+    const query = new URLSearchParams({ name: file.name });
+    if (options.key) query.set('key', options.key);
+    else query.set('folder', options.folder || 'uploads');
+    if (options.show) query.set('show', options.show);
+    if (options.season) query.set('season', options.season);
+    if (options.episode !== undefined) query.set('episode', String(options.episode));
+    if (options.label) query.set('label', options.label);
     const xhr = new XMLHttpRequest();
     xhr.open('POST', `${BACKEND_URL}/api/r2/upload?${query}`);
     xhr.setRequestHeader('Content-Type', file.type || 'application/octet-stream');

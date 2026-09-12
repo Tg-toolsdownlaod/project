@@ -11,9 +11,11 @@ import { config } from "./config.js";
 import { db, nowIso, upsertSingle } from "./db.js";
 import { applyAutoRules, retryFailed, runDownload } from "./downloader.js";
 import * as forwarder from "./forwarder.js";
+import { recordManualUpload } from "./library.js";
 import * as mirror from "./mirror.js";
 import * as takeout from "./takeout.js";
 import * as r2 from "./r2.js";
+import * as s3migrate from "./s3migrate.js";
 import * as urlfetch from "./urlfetch.js";
 import { scanGroup } from "./scanner.js";
 import * as telegram from "./telegram.js";
@@ -263,6 +265,17 @@ app.post(
  * application/json, so the request stream arrives here untouched and goes to
  * R2 chunk by chunk. Nothing is buffered in memory or staged on disk, which
  * is what makes a multi-gigabyte video possible on a small container.
+ *
+ * The panel normally sends `key` itself -- a readable path it built from the
+ * show/episode fields (e.g. "naruto/season-1/EP007.mp4") -- so re-uploading
+ * the same episode overwrites it instead of piling up random-suffixed
+ * duplicates. `folder` + `name` is kept as the fallback for older callers.
+ *
+ * When the panel also sends `show`, this upload is filed as an episode too
+ * (see library.js), so it shows up in Groups/Downloads next to videos
+ * pulled from Telegram -- grouped by show, sorted by episode -- instead of
+ * only existing as a bucket key. A failure there never fails the upload
+ * itself: the file is already safely in R2 by that point.
  */
 app.post(
   "/api/r2/upload",
@@ -279,16 +292,33 @@ app.post(
         .json({ success: false, error: "Send the file itself as the request body." });
     }
 
-    const key = r2.buildUploadKey(String(req.query.folder ?? "uploads"), fileName);
+    const explicitKey = r2.slugPath(String(req.query.key ?? ""));
+    const key = explicitKey || r2.buildUploadKey(String(req.query.folder ?? "uploads"), fileName);
     const url = await r2.uploadBody(req, key, contentType);
     const size = Number.parseInt(req.get("content-length") ?? "", 10);
+    const publicUrl = url === key ? null : url;
+
+    const show = String(req.query.show ?? "").trim();
+    if (show) {
+      const episodeNumber = Number.parseInt(String(req.query.episode ?? ""), 10);
+      await recordManualUpload({
+        show,
+        season: String(req.query.season ?? ""),
+        episodeNumber: Number.isFinite(episodeNumber) ? episodeNumber : null,
+        label: String(req.query.label ?? ""),
+        key,
+        url: publicUrl,
+        size: Number.isFinite(size) ? size : 0,
+        fileName,
+      }).catch((err) => console.error("Filing manual upload as an episode failed:", err?.message ?? err));
+    }
 
     res.json({
       success: true,
       key,
-      // Falls back to the bare key when no public URL is configured, so the UI
-      // can tell the operator the file is in R2 but not reachable yet.
-      url: url === key ? null : url,
+      // Falls back to null when no public URL is configured, so the UI can
+      // tell the operator the file is in R2 but not reachable yet.
+      url: publicUrl,
       size: Number.isFinite(size) ? size : null,
     });
   })
@@ -315,6 +345,38 @@ app.post(
     await r2.remove(key);
     res.json({ success: true });
   })
+);
+
+// ---------------------------------------------------------------- s3 import (one-time)
+
+/**
+ * Kicks off a one-time migration: every object in the source S3-compatible
+ * bucket (S3_* env vars) is streamed straight into R2 and, once confirmed
+ * there, deleted from the source. The body never touches disk on the way
+ * through. Pass dry_run: true to just count what would move, without
+ * changing anything.
+ *
+ * Answers immediately -- the run itself can take a long time for a big
+ * bucket -- and the frontend follows progress with /api/s3import/status.
+ */
+app.post(
+  "/api/s3import/run",
+  requireApiKey,
+  route(async (req, res) => {
+    const prefix = String(req.body?.prefix ?? "");
+    const dryRun = req.body?.dry_run === true;
+    const deleteSource = req.body?.delete_source !== false;
+    const concurrency = Math.min(Math.max(Number(req.body?.concurrency) || 2, 1), 8);
+    spawn(s3migrate.run({ prefix, dryRun, deleteSource, concurrency }), "S3 import");
+    res.json({ success: true, status: "started" });
+  })
+);
+
+/** The current or most recent run's counters, for a progress bar. */
+app.post(
+  "/api/s3import/status",
+  requireApiKey,
+  route(async (_req, res) => res.json({ success: true, ...s3migrate.status() }))
 );
 
 // ---------------------------------------------------------------- url lists
