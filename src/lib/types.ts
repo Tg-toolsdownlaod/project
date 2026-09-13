@@ -244,4 +244,43 @@ export type PageKey =
   | 'automation'
   | 'urllists'
   | 'settings'
-  | 'guide';
+  | 'guide'
+  | 'admin';
+
+export type Capability = 'basic' | 'pro';
+
+export interface PricingTier {
+  key: string;
+  capability: Capability;
+  price: number;
+  months: number;
+  monthly_quota: number | null;
+  label_km: string;
+  label_en: string;
+  pitch_km: string | null;
+  pitch_en: string | null;
+  active: boolean;
+}
+
+export interface SubscriptionRow {
+  user_id: string;
+  email: string | null;
+  tier: string | null;
+  capability: Capability | null;
+  expires_at: string | null;
+  updated_at: string;
+}
+
+export interface PaymentSubmission {
+  id: string;
+  user_id: string;
+  email: string | null;
+  tier: string;
+  amount: number;
+  screenshot_url: string | null;
+  status: 'pending' | 'approved' | 'rejected';
+  aba_trx_id: string | null;
+  submitted_at: string;
+  reviewed_at: string | null;
+  admin_note: string | null;
+}

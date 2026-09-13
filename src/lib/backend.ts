@@ -1,3 +1,6 @@
+import { supabase } from '@/lib/supabase';
+import type { PaymentSubmission } from '@/lib/types';
+
 const BACKEND_URL = import.meta.env.VITE_TELEGRAM_BACKEND_URL as string | undefined;
 const BACKEND_KEY = import.meta.env.VITE_TELEGRAM_BACKEND_KEY as string | undefined;
 
@@ -353,4 +356,76 @@ export function startTakeout() {
 /** Ends the active takeout session; downloads and forwards go back to normal. */
 export function stopTakeout(success = true) {
   return callBackend<TakeoutResult>('/api/telegram/takeout/stop', { success });
+}
+
+// ------------------------------------------------------------ subscriptions
+//
+// These routes are gated by the caller's own Supabase session (requireUser/
+// requireAdmin in server.js), not the shared x-api-key every call above
+// uses -- callBackend can't be reused here, since it always sends that key
+// and never the caller's own JWT.
+
+async function callAuthedBackend<T = Record<string, unknown>>(
+  path: string,
+  body?: Record<string, unknown>
+): Promise<T> {
+  if (!BACKEND_URL) {
+    throw new Error('Backend URL is not configured (VITE_TELEGRAM_BACKEND_URL).');
+  }
+  const { data } = await supabase.auth.getSession();
+  const token = data.session?.access_token;
+  if (!token) throw new Error('Not signed in.');
+  const res = await fetch(`${BACKEND_URL}${path}`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      Authorization: `Bearer ${token}`,
+    },
+    body: JSON.stringify(body || {}),
+  });
+  const json = await res.json().catch(() => ({}));
+  if (!res.ok || json.success === false) {
+    throw new Error(json.error || 'Request to backend failed.');
+  }
+  return json as T;
+}
+
+/** Creates a pending payment claim for the signed-in subscriber. */
+export function submitPaymentClaim(tier: string) {
+  return callAuthedBackend<{ submission: PaymentSubmission }>('/api/subscription/submit', { tier });
+}
+
+/** Attaches an uploaded screenshot to the caller's own pending claim. */
+export function attachPaymentScreenshot(submissionId: string, screenshotUrl: string) {
+  return callAuthedBackend<{ submission: PaymentSubmission }>('/api/subscription/attach-screenshot', {
+    submission_id: submissionId,
+    screenshot_url: screenshotUrl,
+  });
+}
+
+/** Abandons the caller's own pending claim (e.g. switching plans). */
+export function cancelPaymentClaim(submissionId: string) {
+  return callAuthedBackend('/api/subscription/cancel', { submission_id: submissionId });
+}
+
+export interface SubscriptionStatusResult {
+  subscribed: boolean;
+  tier: string | null;
+  capability: 'basic' | 'pro' | null;
+  expiresAt: string | null;
+}
+
+/** The signed-in subscriber's own current plan/expiry. */
+export function getSubscriptionStatus() {
+  return callAuthedBackend<SubscriptionStatusResult>('/api/subscription/status');
+}
+
+/** Admin: approves a pending payment claim (same effect as the Telegram button). */
+export function approvePayment(submissionId: string) {
+  return callAuthedBackend(`/api/admin/payments/${submissionId}/approve`);
+}
+
+/** Admin: rejects a pending payment claim. */
+export function rejectPayment(submissionId: string, note?: string) {
+  return callAuthedBackend(`/api/admin/payments/${submissionId}/reject`, { note });
 }
