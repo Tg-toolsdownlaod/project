@@ -3,6 +3,7 @@ import {
   Plus,
   Users,
   Film,
+  Music,
   RefreshCw,
   Trash2,
   Download,
@@ -24,7 +25,7 @@ import {
   ExternalLink,
 } from 'lucide-react';
 import { supabase } from '@/lib/supabase';
-import { backendConfigured, callBackend } from '@/lib/backend';
+import { backendConfigured, callBackend, r2DownloadUrl } from '@/lib/backend';
 import type { Episode, Group, Topic } from '@/lib/types';
 import { formatBytes, formatTimeAgo, getStatusColor } from '@/lib/utils';
 import { AddGroupModal, type NewGroupInput } from '@/components/AddGroupModal';
@@ -449,34 +450,53 @@ function Breadcrumb({ group, topicLabel, onHome, onGroup }: {
   );
 }
 
-/** The R2 URL badge on an episode card: copy or open it without selecting the card. */
-function EpisodeUrlBadge({ url }: { url: string }) {
+/**
+ * The R2 badge on an episode card: copy/open the public URL when there is
+ * one, and always a real Download link -- streamed through the backend with
+ * Content-Disposition: attachment, so it saves to the device even when the
+ * bucket has no public URL configured at all.
+ */
+function EpisodeUrlBadge({ url, r2Key, fileName }: { url: string | null; r2Key: string; fileName: string | null }) {
   const [copied, setCopied] = useState(false);
   return (
     <span className="flex items-center gap-1">
-      <button
-        onClick={(e) => {
-          e.stopPropagation();
-          navigator.clipboard?.writeText(url);
-          setCopied(true);
-          setTimeout(() => setCopied(false), 1500);
-        }}
-        title="Copy URL"
-        className="flex items-center gap-1 rounded-full bg-success-500/10 px-1.5 py-0.5 font-medium text-success-400 transition-colors hover:bg-success-500/20"
-      >
-        {copied ? <Check className="h-2.5 w-2.5" /> : <Cloud className="h-2.5 w-2.5" />}
-        {copied ? 'Copied' : 'Copy URL'}
-      </button>
-      <a
-        href={url}
-        target="_blank"
-        rel="noreferrer"
-        onClick={(e) => e.stopPropagation()}
-        title="Open"
-        className="rounded-full bg-dark-800 px-1.5 py-0.5 text-dark-400 transition-colors hover:text-white"
-      >
-        <ExternalLink className="h-2.5 w-2.5" />
-      </a>
+      {url && (
+        <>
+          <button
+            onClick={(e) => {
+              e.stopPropagation();
+              navigator.clipboard?.writeText(url);
+              setCopied(true);
+              setTimeout(() => setCopied(false), 1500);
+            }}
+            title="Copy URL"
+            className="flex items-center gap-1 rounded-full bg-success-500/10 px-1.5 py-0.5 font-medium text-success-400 transition-colors hover:bg-success-500/20"
+          >
+            {copied ? <Check className="h-2.5 w-2.5" /> : <Cloud className="h-2.5 w-2.5" />}
+            {copied ? 'Copied' : 'Copy URL'}
+          </button>
+          <a
+            href={url}
+            target="_blank"
+            rel="noreferrer"
+            onClick={(e) => e.stopPropagation()}
+            title="Open"
+            className="rounded-full bg-dark-800 px-1.5 py-0.5 text-dark-400 transition-colors hover:text-white"
+          >
+            <ExternalLink className="h-2.5 w-2.5" />
+          </a>
+        </>
+      )}
+      {backendConfigured && (
+        <a
+          href={r2DownloadUrl(r2Key, fileName ?? undefined)}
+          onClick={(e) => e.stopPropagation()}
+          title="Download to this device"
+          className="flex items-center gap-1 rounded-full bg-dark-800 px-1.5 py-0.5 text-dark-400 transition-colors hover:text-white"
+        >
+          <Download className="h-2.5 w-2.5" /> Save
+        </a>
+      )}
     </span>
   );
 }
@@ -994,6 +1014,8 @@ function EpisodeBrowser({
                 <div className="flex h-12 w-16 shrink-0 items-center justify-center overflow-hidden rounded-lg bg-dark-800/60">
                   {ep.thumbnail_url ? (
                     <img src={ep.thumbnail_url} alt="" className="h-full w-full object-cover" />
+                  ) : ep.media_type === 'audio' ? (
+                    <Music className="h-5 w-5 text-dark-500" />
                   ) : (
                     <Film className="h-5 w-5 text-dark-500" />
                   )}
@@ -1009,14 +1031,8 @@ function EpisodeBrowser({
                     <span>{formatBytes(ep.file_size)}</span>
                     {ep.duration > 0 && <span>{Math.floor(ep.duration / 60)}m</span>}
                     <span className={`rounded-full px-1.5 py-0.5 font-medium ${getStatusColor(ep.status)}`}>{ep.status}</span>
-                    {ep.r2_url ? (
-                      <EpisodeUrlBadge url={ep.r2_url} />
-                    ) : (
-                      ep.r2_key && (
-                        <span className="flex items-center gap-1 rounded-full bg-success-500/10 px-1.5 py-0.5 font-medium text-success-400">
-                          <Cloud className="h-2.5 w-2.5" /> in R2
-                        </span>
-                      )
+                    {ep.r2_key && (
+                      <EpisodeUrlBadge url={ep.r2_url} r2Key={ep.r2_key} fileName={ep.file_name} />
                     )}
                   </div>
                 </div>

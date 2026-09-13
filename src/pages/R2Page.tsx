@@ -15,9 +15,10 @@ import {
   Copy,
   Check,
   Clapperboard,
+  Download,
 } from 'lucide-react';
 import { supabase } from '@/lib/supabase';
-import { backendConfigured, testR2Connection } from '@/lib/backend';
+import { backendConfigured, r2DownloadUrl, testR2Connection } from '@/lib/backend';
 import { R2Uploader } from '@/components/R2Uploader';
 import type { R2Settings, Episode, Group, Topic } from '@/lib/types';
 import { formatBytes, formatTimeAgo } from '@/lib/utils';
@@ -359,6 +360,15 @@ export function R2Page() {
                               <ExternalLink className="w-3.5 h-3.5" />
                             </a>
                           </>
+                        )}
+                        {backendConfigured && ep.r2_key && (
+                          <a
+                            href={r2DownloadUrl(ep.r2_key, ep.file_name ?? undefined)}
+                            title="Download to this device"
+                            className="p-1.5 rounded-lg hover:bg-dark-700 text-dark-500 hover:text-white transition-colors"
+                          >
+                            <Download className="w-3.5 h-3.5" />
+                          </a>
                         )}
                       </div>
                     );

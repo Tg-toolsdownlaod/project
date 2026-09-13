@@ -18,7 +18,9 @@ import {
   joinChat,
   listDialogs,
   resolveGroup,
+  searchPublicChats,
   type DialogInfo,
+  type PublicChatResult,
   type ResolvedGroupInfo,
 } from '@/lib/backend';
 
@@ -29,7 +31,7 @@ export interface NewGroupInput {
   is_forum: boolean;
 }
 
-type Source = 'mine' | 'id' | 'invite';
+type Source = 'mine' | 'search' | 'id' | 'invite';
 
 export function AddGroupModal({
   onClose,
@@ -54,13 +56,15 @@ export function AddGroupModal({
           Pick one of your groups, or paste a chat ID or invite link
         </p>
 
-        <div className="mb-4 flex gap-1 rounded-xl border border-dark-800 bg-dark-800/40 p-1">
+        <div className="mb-4 flex flex-wrap gap-1 rounded-xl border border-dark-800 bg-dark-800/40 p-1">
           <SourceTab active={source === 'mine'} onClick={() => setSource('mine')} icon={<List className="h-3.5 w-3.5" />} label="My groups" />
+          <SourceTab active={source === 'search'} onClick={() => setSource('search')} icon={<Search className="h-3.5 w-3.5" />} label="Search Telegram" />
           <SourceTab active={source === 'id'} onClick={() => setSource('id')} icon={<Hash className="h-3.5 w-3.5" />} label="Chat ID" />
           <SourceTab active={source === 'invite'} onClick={() => setSource('invite')} icon={<Link2 className="h-3.5 w-3.5" />} label="Invite link" />
         </div>
 
         {source === 'mine' && <MyGroups onAdd={onAdd} onFallback={() => setSource('id')} />}
+        {source === 'search' && <SearchGroups onAdd={onAdd} />}
         {source === 'id' && <ByChatId onAdd={onAdd} onClose={onClose} />}
         {source === 'invite' && <ByInvite onAdd={onAdd} />}
       </div>
@@ -201,6 +205,142 @@ function MyGroups({ onAdd, onFallback }: { onAdd: (data: NewGroupInput) => void;
             </button>
           ))
         )}
+      </div>
+    </div>
+  );
+}
+
+/**
+ * Finds public groups/channels the account has never joined (Telegram's own
+ * global directory search), then joins whichever one is picked before adding
+ * it -- so a show's group doesn't need to be found and joined by hand first.
+ */
+function SearchGroups({ onAdd }: { onAdd: (data: NewGroupInput) => void }) {
+  const [query, setQuery] = useState('');
+  const [results, setResults] = useState<PublicChatResult[]>([]);
+  const [searching, setSearching] = useState(false);
+  const [joiningId, setJoiningId] = useState<string | null>(null);
+  const [error, setError] = useState('');
+  const [searched, setSearched] = useState(false);
+  const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  useEffect(() => {
+    if (debounceRef.current) clearTimeout(debounceRef.current);
+    const q = query.trim();
+    if (q.length < 3) {
+      setResults([]);
+      setSearched(false);
+      return;
+    }
+    debounceRef.current = setTimeout(async () => {
+      setSearching(true);
+      setError('');
+      try {
+        const result = await searchPublicChats(q);
+        setResults(result.results);
+      } catch (err) {
+        setError(err instanceof Error ? err.message : 'Could not search Telegram.');
+      }
+      setSearched(true);
+      setSearching(false);
+    }, 500);
+    return () => {
+      if (debounceRef.current) clearTimeout(debounceRef.current);
+    };
+  }, [query]);
+
+  const handleJoin = async (result: PublicChatResult) => {
+    setJoiningId(result.chat_id);
+    setError('');
+    try {
+      const joined = await joinChat(result.username ? `@${result.username}` : result.chat_id);
+      onAdd({
+        chat_id: joined.chat_id,
+        title: joined.title,
+        username: joined.username ?? '',
+        is_forum: joined.is_forum,
+      });
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Could not join this group.');
+      setJoiningId(null);
+    }
+  };
+
+  if (!backendConfigured) {
+    return (
+      <div className="rounded-xl border border-dark-800 bg-dark-800/40 p-4 text-center">
+        <ShieldAlert className="mx-auto mb-2 h-6 w-6 text-warning-400" />
+        <p className="text-xs text-dark-400">No userbot service is configured, so Telegram cannot be searched.</p>
+      </div>
+    );
+  }
+
+  return (
+    <div className="space-y-3">
+      <div className="flex items-center gap-2 rounded-lg border border-dark-700 bg-dark-800 px-3 py-2">
+        <Search className="h-3.5 w-3.5 text-dark-500" />
+        <input
+          value={query}
+          onChange={(e) => setQuery(e.target.value)}
+          placeholder="Search public groups and channels..."
+          autoFocus
+          className="flex-1 bg-transparent text-sm text-white placeholder-dark-600 outline-none"
+        />
+        {searching && <Loader2 className="h-3.5 w-3.5 shrink-0 animate-spin text-dark-500" />}
+      </div>
+      <p className="text-[10px] text-dark-500">
+        Only public groups/channels show up here. Your account joins whichever one you pick.
+      </p>
+
+      {error && (
+        <p className="flex items-start gap-1.5 text-xs text-error-400">
+          <ShieldAlert className="mt-0.5 h-3.5 w-3.5 shrink-0" /> {error}
+        </p>
+      )}
+
+      <div className="max-h-72 space-y-1 overflow-y-auto pr-1">
+        {query.trim().length > 0 && query.trim().length < 3 && (
+          <p className="py-6 text-center text-xs text-dark-600">Keep typing (3+ characters)...</p>
+        )}
+        {searched && !searching && results.length === 0 && (
+          <p className="py-6 text-center text-xs text-dark-600">No public groups matched that search</p>
+        )}
+        {results.map((result) => (
+          <div
+            key={result.chat_id}
+            className="flex items-center gap-3 rounded-lg bg-dark-800/40 p-2.5"
+          >
+            <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-gradient-to-br from-primary-500/30 to-accent-500/30">
+              <span className="text-sm font-bold text-white">{result.title.charAt(0).toUpperCase()}</span>
+            </div>
+            <div className="min-w-0 flex-1">
+              <p className="truncate text-sm font-medium text-white">{result.title}</p>
+              <div className="flex items-center gap-2 text-[10px] text-dark-500">
+                {result.username && <span className="text-accent-400">@{result.username}</span>}
+                {typeof result.participants_count === 'number' && (
+                  <span className="flex items-center gap-1">
+                    <Users className="h-2.5 w-2.5" /> {result.participants_count.toLocaleString()}
+                  </span>
+                )}
+                {result.already_joined && (
+                  <span className="rounded bg-success-500/10 px-1.5 py-0.5 font-medium text-success-400">Joined</span>
+                )}
+              </div>
+            </div>
+            <button
+              onClick={() => handleJoin(result)}
+              disabled={joiningId === result.chat_id}
+              className="flex shrink-0 items-center gap-1.5 rounded-lg bg-primary-500 px-3 py-1.5 text-[11px] font-medium text-white transition-colors hover:bg-primary-600 disabled:cursor-not-allowed disabled:opacity-50"
+            >
+              {joiningId === result.chat_id ? (
+                <Loader2 className="h-3 w-3 animate-spin" />
+              ) : (
+                <Plus className="h-3 w-3" />
+              )}
+              {result.already_joined ? 'Add' : 'Join & add'}
+            </button>
+          </div>
+        ))}
       </div>
     </div>
   );

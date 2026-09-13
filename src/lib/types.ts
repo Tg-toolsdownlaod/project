@@ -84,6 +84,8 @@ export interface Episode {
   status: 'pending' | 'queued' | 'downloading' | 'completed' | 'failed' | 'skipped';
   r2_key: string | null;
   r2_url: string | null;
+  media_type: 'video' | 'audio';
+  mime_type: string | null;
   created_at: string;
   updated_at: string;
 }

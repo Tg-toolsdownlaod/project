@@ -179,6 +179,20 @@ export function deleteR2Object(key: string) {
   return callBackend('/api/r2/delete', { key });
 }
 
+/**
+ * A URL that, opened directly (an <a href>, not fetch), makes the browser
+ * save the object to the device -- the backend streams it through with
+ * Content-Disposition: attachment, so this works even when the bucket has no
+ * public URL configured at all. Returns '' when no backend is configured.
+ */
+export function r2DownloadUrl(key: string, filename?: string): string {
+  if (!BACKEND_URL) return '';
+  const params = new URLSearchParams({ key });
+  if (BACKEND_KEY) params.set('api_key', BACKEND_KEY);
+  if (filename) params.set('filename', filename);
+  return `${BACKEND_URL}/api/r2/download?${params.toString()}`;
+}
+
 /** Verifies the stored source-S3 credentials really can reach that bucket. */
 export function testS3SourceConnection() {
   return callBackend<R2TestResult>('/api/s3source/test');
@@ -285,6 +299,22 @@ export interface DialogInfo {
 /** Joins a public group or an invite link, then returns the group it resolved to. */
 export function joinChat(invite: string) {
   return callBackend<ResolvedGroupInfo & { chat_id: string }>('/api/telegram/join', { invite });
+}
+
+export interface PublicChatResult {
+  chat_id: string;
+  title: string;
+  username: string | null;
+  is_channel: boolean;
+  is_megagroup: boolean;
+  participants_count: number | null;
+  /** True/false when known, undefined when Telegram didn't report membership for this kind of chat. */
+  already_joined?: boolean;
+}
+
+/** Searches Telegram's public directory by keyword -- groups/channels not yet joined included. */
+export function searchPublicChats(query: string, limit = 20) {
+  return callBackend<{ results: PublicChatResult[] }>('/api/telegram/groups/search', { query, limit });
 }
 
 /** Sends a short message to the userbot's own Saved Messages. */
