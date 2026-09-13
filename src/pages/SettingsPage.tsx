@@ -1,16 +1,17 @@
 import { useState } from 'react';
-import { Database, Palette, SlidersHorizontal } from 'lucide-react';
+import { Database, Palette, Server, SlidersHorizontal } from 'lucide-react';
 
 import { Tabs } from '@/components/Tabs';
 import { TelegramGlyph } from '@/components/Brand';
 import { ThemeSwitcher } from '@/components/ThemeSwitcher';
 import { DownloadPreferences } from '@/pages/DownloadPreferences';
 import { R2Page } from '@/pages/R2Page';
+import { S3SourcePage } from '@/pages/S3SourcePage';
 import { TelegramPage } from '@/pages/TelegramPage';
 import { ACCENTS, useTheme } from '@/lib/theme';
 import { useLanguage } from '@/lib/i18n';
 
-type SettingsTab = 'telegram' | 'r2' | 'downloads' | 'appearance';
+type SettingsTab = 'telegram' | 'r2' | 's3source' | 'downloads' | 'appearance';
 
 /**
  * Telegram, R2 and download preferences used to be three sidebar entries that
@@ -28,6 +29,7 @@ export function SettingsPage() {
         tabs={[
           { key: 'telegram', label: t('tab.telegram'), icon: <TelegramGlyph className="h-3.5 w-3.5" /> },
           { key: 'r2', label: t('tab.r2'), icon: <Database className="h-3.5 w-3.5" /> },
+          { key: 's3source', label: t('tab.s3source'), icon: <Server className="h-3.5 w-3.5" /> },
           { key: 'downloads', label: t('tab.downloads'), icon: <SlidersHorizontal className="h-3.5 w-3.5" /> },
           { key: 'appearance', label: t('tab.appearance'), icon: <Palette className="h-3.5 w-3.5" /> },
         ]}
@@ -35,6 +37,7 @@ export function SettingsPage() {
 
       {tab === 'telegram' && <TelegramPage />}
       {tab === 'r2' && <R2Page />}
+      {tab === 's3source' && <S3SourcePage />}
       {tab === 'downloads' && <DownloadPreferences />}
       {tab === 'appearance' && <AppearanceSettings />}
     </div>

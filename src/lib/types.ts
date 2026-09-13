@@ -29,6 +29,21 @@ export interface R2Settings {
   updated_at: string;
 }
 
+/** A second, independent S3-compatible bucket -- browsed and optionally migrated into R2. */
+export interface S3SourceSettings {
+  id: string;
+  endpoint_url: string | null;
+  access_key_id: string | null;
+  secret_access_key: string | null;
+  bucket_name: string | null;
+  region: string;
+  force_path_style: boolean;
+  connected: boolean;
+  last_connected_at: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
 export interface Group {
   id: string;
   chat_id: string;

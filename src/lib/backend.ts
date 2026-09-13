@@ -179,6 +179,60 @@ export function deleteR2Object(key: string) {
   return callBackend('/api/r2/delete', { key });
 }
 
+/** Verifies the stored source-S3 credentials really can reach that bucket. */
+export function testS3SourceConnection() {
+  return callBackend<R2TestResult>('/api/s3source/test');
+}
+
+export interface S3SourceObject {
+  key: string;
+  size: number;
+  last_modified: string | null;
+}
+
+/** Lists what is really in the source bucket under a prefix, newest first. */
+export function listS3SourceObjects(prefix = '', limit = 100) {
+  return callBackend<{ bucket: string; objects: S3SourceObject[]; total: number }>('/api/s3source/objects', {
+    prefix,
+    limit,
+  });
+}
+
+export interface S3MigrationStatus {
+  running: boolean;
+  dry_run: boolean;
+  prefix: string;
+  started_at: string | null;
+  finished_at: string | null;
+  total: number;
+  scanned: number;
+  migrated: number;
+  skipped: number;
+  deleted: number;
+  failed: number;
+  bytes: number;
+  errors: { key: string; error: string }[];
+}
+
+/**
+ * Starts streaming every object from the source bucket into R2 (deleting it
+ * from the source once confirmed there, unless deleteSource is false).
+ * Answers as soon as the job is queued -- follow progress with
+ * getS3MigrationStatus().
+ */
+export function startS3Migration(options: { prefix?: string; dryRun?: boolean; deleteSource?: boolean } = {}) {
+  return callBackend<{ status: string }>('/api/s3import/run', {
+    prefix: options.prefix ?? '',
+    dry_run: options.dryRun ?? false,
+    delete_source: options.deleteSource ?? true,
+  });
+}
+
+/** The current or most recent migration run's counters, for a progress bar. */
+export function getS3MigrationStatus() {
+  return callBackend<S3MigrationStatus>('/api/s3import/status');
+}
+
 /**
  * Asks the service to fetch every URL in a list and stream it into R2. It
  * answers as soon as the work is queued -- the page follows the rows, which

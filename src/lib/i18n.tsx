@@ -43,6 +43,7 @@ const en = {
   'tab.forwards': 'Forward jobs',
   'tab.telegram': 'Telegram',
   'tab.r2': 'R2 Storage',
+  'tab.s3source': 'Other Storage',
   'tab.downloads': 'Downloads',
   'tab.appearance': 'Appearance',
 
@@ -112,6 +113,7 @@ const km: Record<TranslationKey, string> = {
   'tab.forwards': 'ការបញ្ជូនបន្ត',
   'tab.telegram': 'Telegram',
   'tab.r2': 'ឃ្លាំង R2',
+  'tab.s3source': 'ឃ្លាំងផ្សេងទៀត',
   'tab.downloads': 'ការទាញយក',
   'tab.appearance': 'រូបរាង',
 
