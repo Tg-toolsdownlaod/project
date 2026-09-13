@@ -29,6 +29,24 @@ export async function callBackend<T = Record<string, unknown>>(
   return data as T;
 }
 
+export interface TelegramLoginResult {
+  /** The synthetic email the Telegram account is signed in as -- opaque, not shown to the user. */
+  email: string;
+  /** A one-time token; the caller exchanges it via supabase.auth.verifyOtp({token_hash, type: 'magiclink'}). */
+  token_hash: string;
+}
+
+/**
+ * Hands the signed payload from the Telegram Login Widget to the backend for
+ * verification, and gets back a one-time token to trade for a real Supabase
+ * session. Unauthenticated on purpose -- this is how a visitor gets a
+ * session in the first place -- so it works even before backendConfigured's
+ * usual x-api-key would apply.
+ */
+export function telegramLogin(payload: Record<string, unknown>) {
+  return callBackend<TelegramLoginResult>('/api/auth/telegram-login', payload);
+}
+
 export interface ResolvedGroupInfo {
   title: string;
   username: string | null;

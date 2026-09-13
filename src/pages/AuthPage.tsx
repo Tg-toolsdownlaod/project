@@ -2,8 +2,14 @@ import { useState } from 'react';
 import { Loader2, Lock, Mail, AlertTriangle, MailCheck } from 'lucide-react';
 
 import { AppLogo } from '@/components/Brand';
+import {
+  TelegramLoginButton,
+  telegramLoginConfigured,
+  type TelegramAuthPayload,
+} from '@/components/TelegramLoginButton';
 import { useLanguage } from '@/lib/i18n';
 import { supabase } from '@/lib/supabase';
+import { telegramLogin } from '@/lib/backend';
 
 type Mode = 'signin' | 'signup';
 
@@ -50,6 +56,19 @@ export function AuthPage() {
     }
   };
 
+  const handleTelegramAuth = async (payload: TelegramAuthPayload) => {
+    setError('');
+    setLoading(true);
+    try {
+      const { email, token_hash } = await telegramLogin(payload as unknown as Record<string, unknown>);
+      const { error: otpError } = await supabase.auth.verifyOtp({ email, token_hash, type: 'magiclink' });
+      if (otpError) throw otpError;
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Telegram sign-in failed.');
+    }
+    setLoading(false);
+  };
+
   if (checkEmail) {
     return (
       <div className="flex min-h-screen items-center justify-center bg-dark-950 p-4">
@@ -82,10 +101,22 @@ export function AuthPage() {
           </div>
         </div>
 
+        {telegramLoginConfigured && (
+          <div className="mb-4 rounded-2xl border border-dark-800 bg-dark-900/60 p-6">
+            <TelegramLoginButton onAuth={handleTelegramAuth} />
+          </div>
+        )}
+
         <form
           onSubmit={handleSubmit}
           className="space-y-4 rounded-2xl border border-dark-800 bg-dark-900/60 p-6"
         >
+          {telegramLoginConfigured && (
+            <p className="-mt-1 mb-1 text-center text-[11px] uppercase tracking-wide text-dark-600">
+              {t('auth.orEmail')}
+            </p>
+          )}
+
           {error && (
             <div className="flex items-start gap-2 rounded-lg border border-error-500/30 bg-error-500/10 px-3 py-2 text-xs text-error-300">
               <AlertTriangle className="mt-0.5 h-3.5 w-3.5 shrink-0" />

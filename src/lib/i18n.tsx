@@ -15,7 +15,7 @@ const en = {
   'nav.systemStatus': 'System Status',
   'nav.online': 'Online',
   'nav.offline': 'Not connected',
-  'nav.appName': 'TG Downloader',
+  'nav.appName': 'KH Telegram Download',
   'nav.appTagline': 'Telegram video toolkit',
 
   'page.dashboard.title': 'Dashboard',
@@ -68,6 +68,7 @@ const en = {
   'auth.checkEmailBody': "We've sent a confirmation link to your email. Open it, then come back and sign in.",
   'auth.backToSignIn': 'Back to sign in',
   'auth.signOut': 'Sign out',
+  'auth.orEmail': 'or use email',
 };
 
 type TranslationKey = keyof typeof en;
@@ -83,7 +84,7 @@ const km: Record<TranslationKey, string> = {
   'nav.systemStatus': 'ស្ថានភាពប្រព័ន្ធ',
   'nav.online': 'កំពុងដំណើរការ',
   'nav.offline': 'មិនទាន់ភ្ជាប់',
-  'nav.appName': 'TG Downloader',
+  'nav.appName': 'KH Telegram Download',
   'nav.appTagline': 'ឧបករណ៍វីដេអូ Telegram',
 
   'page.dashboard.title': 'ផ្ទាំងគ្រប់គ្រង',
@@ -136,6 +137,7 @@ const km: Record<TranslationKey, string> = {
   'auth.checkEmailBody': 'យើងបានផ្ញើតំណបញ្ជាក់ទៅអ៊ីមែលរបស់អ្នក។ បើកវា រួចត្រឡប់មកចូលប្រើវិញ។',
   'auth.backToSignIn': 'ត្រឡប់ទៅចូលប្រើ',
   'auth.signOut': 'ចាកចេញ',
+  'auth.orEmail': 'ឬប្រើអ៊ីមែល',
 };
 
 const translations: Record<Language, Record<TranslationKey, string>> = { en, km };
