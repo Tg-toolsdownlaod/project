@@ -4,6 +4,7 @@ import {
   DownloadCloud,
   LayoutDashboard,
   Link2,
+  LogOut,
   Settings,
   Users,
   Wand2,
@@ -149,6 +150,17 @@ export function Sidebar({ currentPage, onNavigate, collapsed }: SidebarProps) {
               </p>
             </div>
           )}
+        </button>
+
+        <button
+          onClick={() => supabase.auth.signOut()}
+          className={`flex w-full items-center gap-2 rounded-lg px-3 py-2 text-xs font-medium text-dark-400 transition-colors hover:bg-error-500/10 hover:text-error-400 ${
+            collapsed ? 'justify-center' : ''
+          }`}
+          title={collapsed ? t('auth.signOut') : undefined}
+        >
+          <LogOut className="h-3.5 w-3.5 shrink-0" />
+          {!collapsed && <span>{t('auth.signOut')}</span>}
         </button>
       </div>
     </aside>

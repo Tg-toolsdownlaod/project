@@ -1,8 +1,11 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
+import type { Session } from '@supabase/supabase-js';
+import { Loader2 } from 'lucide-react';
 
 import { Header } from '@/components/Header';
 import { SetupNotice } from '@/components/SetupNotice';
 import { Sidebar } from '@/components/Sidebar';
+import { AuthPage } from '@/pages/AuthPage';
 import { AutomationPage } from '@/pages/AutomationPage';
 import { DashboardPage } from '@/pages/DashboardPage';
 import { DownloadsPage } from '@/pages/DownloadsPage';
@@ -11,13 +14,30 @@ import { GuidePage } from '@/pages/GuidePage';
 import { SettingsPage } from '@/pages/SettingsPage';
 import { UrlListsPage } from '@/pages/UrlListsPage';
 import { useLanguage } from '@/lib/i18n';
-import { supabaseConfigured } from '@/lib/supabase';
+import { supabase, supabaseConfigured } from '@/lib/supabase';
 import type { PageKey } from '@/lib/types';
 
 function App() {
   const [currentPage, setCurrentPage] = useState<PageKey>('dashboard');
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
+  const [session, setSession] = useState<Session | null>(null);
+  const [sessionLoading, setSessionLoading] = useState(true);
   const { t } = useLanguage();
+
+  useEffect(() => {
+    if (!supabaseConfigured) {
+      setSessionLoading(false);
+      return;
+    }
+    supabase.auth.getSession().then(({ data }) => {
+      setSession(data.session);
+      setSessionLoading(false);
+    });
+    const {
+      data: { subscription },
+    } = supabase.auth.onAuthStateChange((_event, next) => setSession(next));
+    return () => subscription.unsubscribe();
+  }, []);
 
   const PAGE_INFO: Record<PageKey, { title: string; subtitle: string }> = {
     dashboard: { title: t('page.dashboard.title'), subtitle: t('page.dashboard.subtitle') },
@@ -34,6 +54,18 @@ function App() {
   // Every page reads from the database, so without credentials the app can
   // only explain itself.
   if (!supabaseConfigured) return <SetupNotice />;
+
+  if (sessionLoading) {
+    return (
+      <div className="flex h-screen items-center justify-center bg-dark-950">
+        <Loader2 className="h-6 w-6 animate-spin text-primary-500" />
+      </div>
+    );
+  }
+
+  // Every table is scoped to the signed-in subscriber by RLS, so nothing past
+  // this point may render until there's a session to scope it to.
+  if (!session) return <AuthPage />;
 
   const renderPage = () => {
     switch (currentPage) {

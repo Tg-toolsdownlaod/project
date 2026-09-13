@@ -52,6 +52,22 @@ const en = {
   'status.connected': 'Connected',
   'status.disconnected': 'Disconnected',
   'status.checking': 'Checking…',
+
+  'auth.tagline': 'Sign in to your own private workspace',
+  'auth.email': 'Email',
+  'auth.password': 'Password',
+  'auth.confirmPassword': 'Confirm password',
+  'auth.signIn': 'Sign in',
+  'auth.signUp': 'Create account',
+  'auth.noAccount': "Don't have an account?",
+  'auth.haveAccount': 'Already have an account?',
+  'auth.switchToSignUp': 'Sign up',
+  'auth.switchToSignIn': 'Sign in',
+  'auth.passwordMismatch': 'Passwords do not match.',
+  'auth.checkEmailTitle': 'Check your email',
+  'auth.checkEmailBody': "We've sent a confirmation link to your email. Open it, then come back and sign in.",
+  'auth.backToSignIn': 'Back to sign in',
+  'auth.signOut': 'Sign out',
 };
 
 type TranslationKey = keyof typeof en;
@@ -104,6 +120,22 @@ const km: Record<TranslationKey, string> = {
   'status.connected': 'បានភ្ជាប់',
   'status.disconnected': 'មិនបានភ្ជាប់',
   'status.checking': 'កំពុងពិនិត្យ…',
+
+  'auth.tagline': 'ចូលទៅកាន់ workspace ឯកជនរបស់អ្នក',
+  'auth.email': 'អ៊ីមែល',
+  'auth.password': 'ពាក្យសម្ងាត់',
+  'auth.confirmPassword': 'បញ្ជាក់ពាក្យសម្ងាត់',
+  'auth.signIn': 'ចូលប្រើ',
+  'auth.signUp': 'បង្កើតគណនី',
+  'auth.noAccount': 'មិនទាន់មានគណនី?',
+  'auth.haveAccount': 'មានគណនីរួចហើយ?',
+  'auth.switchToSignUp': 'ចុះឈ្មោះ',
+  'auth.switchToSignIn': 'ចូលប្រើ',
+  'auth.passwordMismatch': 'ពាក្យសម្ងាត់មិនត្រូវគ្នាទេ។',
+  'auth.checkEmailTitle': 'សូមពិនិត្យអ៊ីមែលរបស់អ្នក',
+  'auth.checkEmailBody': 'យើងបានផ្ញើតំណបញ្ជាក់ទៅអ៊ីមែលរបស់អ្នក។ បើកវា រួចត្រឡប់មកចូលប្រើវិញ។',
+  'auth.backToSignIn': 'ត្រឡប់ទៅចូលប្រើ',
+  'auth.signOut': 'ចាកចេញ',
 };
 
 const translations: Record<Language, Record<TranslationKey, string>> = { en, km };
