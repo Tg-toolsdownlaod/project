@@ -19,6 +19,7 @@ import {
 } from 'lucide-react';
 import { supabase } from '@/lib/supabase';
 import { callBackend, checkHealth, startTakeout, stopTakeout } from '@/lib/backend';
+import { useLanguage } from '@/lib/i18n';
 import type { TelegramSettings } from '@/lib/types';
 import { formatTimeAgo } from '@/lib/utils';
 
@@ -31,6 +32,7 @@ const EMPTY_SETTINGS: TelegramSettings = {
 };
 
 export function TelegramPage() {
+  const { t } = useLanguage();
   const [settings, setSettings] = useState<TelegramSettings | null>(null);
   // Snapshot of the last saved/loaded credentials — Reset reverts to this.
   const [savedSettings, setSavedSettings] = useState<TelegramSettings>(EMPTY_SETTINGS);
@@ -64,13 +66,9 @@ export function TelegramPage() {
     try {
       const result = await startTakeout();
       setTakeoutActive(true);
-      setTakeoutNotice(
-        result.already_active
-          ? 'A takeout session was already running.'
-          : 'Takeout session started — downloads, scans and forwards now run under relaxed limits.'
-      );
+      setTakeoutNotice(result.already_active ? t('tg.takeoutAlreadyRunning') : t('tg.takeoutStarted'));
     } catch (err) {
-      setTakeoutError(err instanceof Error ? err.message : 'Could not start the takeout session.');
+      setTakeoutError(err instanceof Error ? err.message : t('tg.takeoutStartFailed'));
     }
     setTakeoutBusy(false);
   };
@@ -82,9 +80,9 @@ export function TelegramPage() {
     try {
       await stopTakeout(true);
       setTakeoutActive(false);
-      setTakeoutNotice('Takeout session ended — back to normal limits.');
+      setTakeoutNotice(t('tg.takeoutEnded'));
     } catch (err) {
-      setTakeoutError(err instanceof Error ? err.message : 'Could not stop the takeout session.');
+      setTakeoutError(err instanceof Error ? err.message : t('tg.takeoutStopFailed'));
     }
     setTakeoutBusy(false);
   };
@@ -93,7 +91,7 @@ export function TelegramPage() {
     (async () => {
       const { data, error: loadError } = await supabase.from('telegram_settings').select('*').maybeSingle();
       if (loadError) {
-        setError('Could not load Telegram settings. Please refresh and try again.');
+        setError(t('tg.errLoadSettings'));
       } else if (data) {
         setSettings(data as TelegramSettings);
         setSavedSettings(data as TelegramSettings);
@@ -129,7 +127,7 @@ export function TelegramPage() {
         }).select().maybeSingle();
 
     if (result.error) {
-      setError('Could not save Telegram credentials. Please try again.');
+      setError(t('tg.errSaveCredentials'));
     } else {
       const updated = !settings.id && result.data
         ? { ...settings, id: (result.data as TelegramSettings).id }
@@ -154,7 +152,7 @@ export function TelegramPage() {
       await callBackend('/api/telegram/send-code');
       setAwaitingCode(true);
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Could not send the verification code.');
+      setError(err instanceof Error ? err.message : t('tg.errSendCode'));
     } finally {
       setConnecting(false);
     }
@@ -180,7 +178,7 @@ export function TelegramPage() {
       const { data } = await supabase.from('telegram_settings').select('*').maybeSingle();
       if (data) setSettings(data as TelegramSettings);
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Could not verify the code.');
+      setError(err instanceof Error ? err.message : t('tg.errVerifyCode'));
     } finally {
       setConnecting(false);
     }
@@ -197,7 +195,7 @@ export function TelegramPage() {
     setAwaitingCode(false);
     if (settings?.id) {
       const { error: disconnectError } = await supabase.from('telegram_settings').update({ connected: false }).eq('id', settings.id);
-      if (disconnectError) setError('Could not disconnect Telegram. Please try again.');
+      if (disconnectError) setError(t('tg.errDisconnect'));
     }
   };
 
@@ -229,13 +227,13 @@ export function TelegramPage() {
               <Send className={`w-6 h-6 ${connected ? 'text-success-400' : 'text-dark-500'}`} />
             </div>
             <div>
-              <h2 className="text-base font-bold text-white">Telegram Userbot</h2>
+              <h2 className="text-base font-bold text-white">{t('tg.title')}</h2>
               <p className="text-xs text-dark-500">
                 {connected
                   ? (settings?.account_username
                       ? `@${settings.account_username}`
-                      : settings?.account_first_name || settings?.phone || 'user')
-                  : 'Not connected — set up your userbot credentials'}
+                      : settings?.account_first_name || settings?.phone || t('tg.userFallback'))
+                  : t('tg.notConnected')}
               </p>
             </div>
           </div>
@@ -243,18 +241,18 @@ export function TelegramPage() {
             {connected ? (
               <>
                 <span className="flex items-center gap-2 px-3 py-1.5 rounded-lg bg-success-500/10 text-success-400 text-xs font-medium">
-                  <CheckCircle2 className="w-4 h-4" /> Active
+                  <CheckCircle2 className="w-4 h-4" /> {t('tg.active')}
                 </span>
                 <button
                   onClick={handleDisconnect}
                   className="flex items-center gap-2 px-3 py-1.5 rounded-lg bg-dark-800 hover:bg-error-500/20 text-dark-400 hover:text-error-400 text-xs font-medium transition-colors"
                 >
-                  <XCircle className="w-3.5 h-3.5" /> Disconnect
+                  <XCircle className="w-3.5 h-3.5" /> {t('tg.disconnect')}
                 </button>
               </>
             ) : (
               <span className="flex items-center gap-2 px-3 py-1.5 rounded-lg bg-dark-800 text-dark-400 text-xs font-medium">
-                <XCircle className="w-4 h-4" /> Offline
+                <XCircle className="w-4 h-4" /> {t('tg.offline')}
               </span>
             )}
           </div>
@@ -265,17 +263,17 @@ export function TelegramPage() {
       <div className={`rounded-xl border p-5 transition-colors ${isDirty ? 'border-warning-500/30 bg-dark-900/60' : 'border-dark-800 bg-dark-900/60'}`}>
         <div className="flex items-center justify-between mb-4">
           <h3 className="text-sm font-semibold text-white flex items-center gap-2">
-            <Key className="w-4 h-4 text-primary-400" /> API Credentials
+            <Key className="w-4 h-4 text-primary-400" /> {t('tg.apiCredentials')}
           </h3>
           {isDirty && (
             <span className="text-[10px] text-warning-400 font-medium px-2 py-0.5 rounded-full bg-warning-500/10 border border-warning-500/20">
-              Unsaved
+              {t('tg.unsaved')}
             </span>
           )}
         </div>
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
           <div>
-            <label className="text-xs text-dark-400 font-medium block mb-1.5">API ID</label>
+            <label className="text-xs text-dark-400 font-medium block mb-1.5">{t('tg.apiId')}</label>
             <input
               type="text"
               value={settings?.api_id || ''}
@@ -285,7 +283,7 @@ export function TelegramPage() {
             />
           </div>
           <div>
-            <label className="text-xs text-dark-400 font-medium block mb-1.5">API Hash</label>
+            <label className="text-xs text-dark-400 font-medium block mb-1.5">{t('tg.apiHash')}</label>
             <input
               type="password"
               value={settings?.api_hash || ''}
@@ -295,7 +293,7 @@ export function TelegramPage() {
             />
           </div>
           <div className="md:col-span-2">
-            <label className="text-xs text-dark-400 font-medium block mb-1.5">Phone Number</label>
+            <label className="text-xs text-dark-400 font-medium block mb-1.5">{t('tg.phoneNumber')}</label>
             <div className="relative">
               <Phone className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-dark-500" />
               <input
@@ -314,19 +312,19 @@ export function TelegramPage() {
             disabled={saving || !isDirty}
             className="flex items-center gap-2 px-4 py-2.5 rounded-lg bg-primary-500 hover:bg-primary-600 text-white text-sm font-medium transition-colors disabled:opacity-50"
           >
-            {saving ? <Loader2 className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4" />} Save Credentials
+            {saving ? <Loader2 className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4" />} {t('tg.saveCredentials')}
           </button>
           <button
             onClick={handleReset}
             disabled={saving || !isDirty}
-            title="Discard unsaved changes and revert to the last saved credentials"
+            title={t('tg.resetTitle')}
             className="flex items-center gap-2 px-4 py-2.5 rounded-lg bg-dark-800 hover:bg-dark-700 text-dark-300 hover:text-white text-sm font-medium transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
           >
-            <RotateCcw className="w-4 h-4" /> Reset
+            <RotateCcw className="w-4 h-4" /> {t('tg.reset')}
           </button>
           {isDirty && (
             <span className="text-[11px] text-warning-400 flex items-center gap-1.5">
-              <AlertTriangle className="w-3 h-3" /> Unsaved changes
+              <AlertTriangle className="w-3 h-3" /> {t('tg.unsavedChanges')}
             </span>
           )}
         </div>
@@ -336,13 +334,13 @@ export function TelegramPage() {
       {!connected && (
         <div className="rounded-xl border border-dark-800 bg-dark-900/60 p-5">
           <h3 className="text-sm font-semibold text-white mb-4 flex items-center gap-2">
-            <Zap className="w-4 h-4 text-warning-400" /> Connect Userbot
+            <Zap className="w-4 h-4 text-warning-400" /> {t('tg.connectUserbot')}
           </h3>
           <div>
             {!awaitingCode ? (
               <>
                 <p className="text-xs text-dark-400 mb-4">
-                  Save your details first, then connect. Telegram will text a login code to the phone number above.
+                  {t('tg.connectInstructions')}
                 </p>
                 <button
                   onClick={handleConnect}
@@ -350,18 +348,18 @@ export function TelegramPage() {
                   className="flex items-center gap-2 px-4 py-2.5 rounded-lg bg-success-500 hover:bg-success-600 text-white text-sm font-medium transition-colors disabled:opacity-50"
                 >
                   {connecting ? <Loader2 className="w-4 h-4 animate-spin" /> : <Send className="w-4 h-4" />}
-                  Connect & Send Code
+                  {t('tg.connectSendCode')}
                 </button>
                 {(!settings?.api_id || !settings?.api_hash || !settings?.phone) && (
                   <p className="text-xs text-warning-400 mt-2 flex items-center gap-1.5">
-                    <AlertTriangle className="w-3.5 h-3.5" /> Fill in all credentials above first
+                    <AlertTriangle className="w-3.5 h-3.5" /> {t('tg.fillCredentialsFirst')}
                   </p>
                 )}
               </>
             ) : (
               <div className="space-y-3">
                 <p className="text-xs text-dark-400">
-                  Enter the login code Telegram just sent to {settings?.phone}.
+                  {t('tg.enterCodeSentTo').replace('{phone}', settings?.phone || '')}
                 </p>
                 <input
                   type="text"
@@ -373,13 +371,13 @@ export function TelegramPage() {
                 {needsPassword && (
                   <>
                     <p className="text-xs text-dark-400">
-                      Your account has Two-Step Verification enabled — enter that password too.
+                      {t('tg.twoStepEnabled')}
                     </p>
                     <input
                       type="password"
                       value={password}
                       onChange={(e) => setPassword(e.target.value)}
-                      placeholder="2FA password"
+                      placeholder={t('tg.placeholder2fa')}
                       className="w-full bg-dark-800 border border-dark-700 rounded-lg px-3 py-2.5 text-sm text-white placeholder-dark-600 outline-none focus:border-primary-500 transition-colors"
                     />
                   </>
@@ -391,13 +389,13 @@ export function TelegramPage() {
                     className="flex items-center gap-2 px-4 py-2.5 rounded-lg bg-success-500 hover:bg-success-600 text-white text-sm font-medium transition-colors disabled:opacity-50"
                   >
                     {connecting ? <Loader2 className="w-4 h-4 animate-spin" /> : <CheckCircle2 className="w-4 h-4" />}
-                    Verify & Connect
+                    {t('tg.verifyConnect')}
                   </button>
                   <button
                     onClick={() => { setAwaitingCode(false); setCode(''); setPassword(''); setNeedsPassword(false); }}
                     className="text-xs text-dark-400 hover:text-white transition-colors"
                   >
-                    Cancel
+                    {t('tg.cancel')}
                   </button>
                 </div>
               </div>
@@ -410,7 +408,7 @@ export function TelegramPage() {
       {connected && (
         <div className="rounded-xl border border-dark-800 bg-dark-900/60 p-5">
           <h3 className="text-sm font-semibold text-white mb-4 flex items-center gap-2">
-            <Shield className="w-4 h-4 text-success-400" /> Session Info
+            <Shield className="w-4 h-4 text-success-400" /> {t('tg.sessionInfo')}
           </h3>
 
           {/* Account identity banner */}
@@ -420,7 +418,7 @@ export function TelegramPage() {
             </div>
             <div className="min-w-0 flex-1">
               <p className="text-sm font-bold text-white truncate">
-                {[settings?.account_first_name, settings?.account_last_name].filter(Boolean).join(' ') || 'Telegram User'}
+                {[settings?.account_first_name, settings?.account_last_name].filter(Boolean).join(' ') || t('tg.telegramUserFallback')}
               </p>
               <div className="flex items-center gap-3 mt-1 flex-wrap">
                 {settings?.account_username && (
@@ -436,21 +434,21 @@ export function TelegramPage() {
               </div>
             </div>
             <span className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-success-500/15 text-success-400 text-xs font-medium shrink-0">
-              <CheckCircle2 className="w-3.5 h-3.5" /> Active
+              <CheckCircle2 className="w-3.5 h-3.5" /> {t('tg.active')}
             </span>
           </div>
 
           <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
             <div className="bg-dark-800/40 rounded-lg p-3">
-              <p className="text-xs text-dark-500 mb-1 flex items-center gap-1.5"><Phone className="w-3 h-3" /> Phone</p>
+              <p className="text-xs text-dark-500 mb-1 flex items-center gap-1.5"><Phone className="w-3 h-3" /> {t('tg.phone')}</p>
               <p className="text-sm text-white font-medium font-mono">{settings?.phone || '—'}</p>
             </div>
             <div className="bg-dark-800/40 rounded-lg p-3">
-              <p className="text-xs text-dark-500 mb-1 flex items-center gap-1.5"><User className="w-3 h-3" /> Account ID</p>
+              <p className="text-xs text-dark-500 mb-1 flex items-center gap-1.5"><User className="w-3 h-3" /> {t('tg.accountId')}</p>
               <p className="text-sm text-white font-medium font-mono">{settings?.account_user_id || '—'}</p>
             </div>
             <div className="bg-dark-800/40 rounded-lg p-3">
-              <p className="text-xs text-dark-500 mb-1 flex items-center gap-1.5"><Shield className="w-3 h-3" /> Last Connected</p>
+              <p className="text-xs text-dark-500 mb-1 flex items-center gap-1.5"><Shield className="w-3 h-3" /> {t('tg.lastConnected')}</p>
               <p className="text-sm text-white font-medium">{formatTimeAgo(settings?.last_connected_at ?? null)}</p>
             </div>
           </div>
@@ -462,31 +460,27 @@ export function TelegramPage() {
         <div className="rounded-xl border border-dark-800 bg-dark-900/60 p-5">
           <div className="flex items-start justify-between gap-3 mb-3">
             <h3 className="text-sm font-semibold text-white flex items-center gap-2">
-              <PackageOpen className="w-4 h-4 text-accent-400" /> Takeout mode
-              <span className="text-[10px] font-normal text-dark-500">(advanced)</span>
+              <PackageOpen className="w-4 h-4 text-accent-400" /> {t('tg.takeoutMode')}
+              <span className="text-[10px] font-normal text-dark-500">{t('tg.advanced')}</span>
             </h3>
             <span className={`flex items-center gap-1.5 px-2 py-1 rounded-lg text-[11px] font-medium shrink-0 ${
               takeoutActive ? 'bg-primary-500/15 text-primary-400' : 'bg-dark-800 text-dark-500'
             }`}>
               <span className={`w-1.5 h-1.5 rounded-full ${takeoutActive ? 'bg-primary-400 animate-pulse' : 'bg-dark-600'}`} />
-              {takeoutActive ? 'Active' : 'Off'}
+              {takeoutActive ? t('tg.active') : t('tg.off')}
             </span>
           </div>
 
           <p className="text-xs text-dark-400 leading-relaxed mb-3">
-            Telegram's own bulk-export mode. While active, scans, downloads and forwards from this
-            service run under Telegram's relaxed rate limits instead of the normal ones. It is{' '}
-            <span className="text-white font-medium">not a guaranteed speed boost</span> — Telegram
-            enforces this server-side, not this app.
+            {t('tg.takeoutDesc1')}{' '}
+            <span className="text-white font-medium">{t('tg.takeoutDescBold')}</span>{' '}
+            {t('tg.takeoutDesc2')}
           </p>
 
           <div className="flex items-start gap-2 mb-4 p-3 rounded-lg bg-warning-500/10 border border-warning-500/20">
             <AlertTriangle className="w-4 h-4 text-warning-400 shrink-0 mt-0.5" />
             <p className="text-xs text-warning-300 leading-relaxed">
-              The first time this is turned on, Telegram notifies your other signed-in devices
-              (check your phone) and waits for confirmation there — or, if nothing confirms it,
-              refuses for up to 24 hours before it can be tried again. This is Telegram's own
-              security check, not something this app can skip.
+              {t('tg.takeoutWarning')}
             </p>
           </div>
 
@@ -511,7 +505,7 @@ export function TelegramPage() {
             }`}
           >
             {takeoutBusy ? <Loader2 className="w-4 h-4 animate-spin" /> : <PackageOpen className="w-4 h-4" />}
-            {takeoutActive ? 'Stop takeout session' : 'Start takeout session'}
+            {takeoutActive ? t('tg.stopTakeout') : t('tg.startTakeout')}
           </button>
         </div>
       )}
@@ -519,15 +513,15 @@ export function TelegramPage() {
       {/* Setup Guide */}
       <div className="rounded-xl border border-dark-800 bg-dark-900/60 p-5">
         <h3 className="text-sm font-semibold text-white mb-3 flex items-center gap-2">
-          <Info className="w-4 h-4 text-accent-400" /> How to get Telegram API credentials
+          <Info className="w-4 h-4 text-accent-400" /> {t('tg.setupGuideTitle')}
         </h3>
         <div className="space-y-2 text-xs text-dark-400">
           {[
-            'Go to my.telegram.org and log in with your phone number',
-            'Click "API development tools"',
-            'Fill in app name (any name) and platform',
-            'Copy the api_id and api_hash',
-            'Paste them here, enter your phone number, and connect',
+            t('tg.setupStep1'),
+            t('tg.setupStep2'),
+            t('tg.setupStep3'),
+            t('tg.setupStep4'),
+            t('tg.setupStep5'),
           ].map((step, i) => (
             <div key={i} className="flex items-start gap-3">
               <span className="w-5 h-5 rounded-full bg-primary-500/20 text-primary-400 flex items-center justify-center text-[10px] font-bold shrink-0">{i + 1}</span>
@@ -538,7 +532,7 @@ export function TelegramPage() {
         <div className="flex items-start gap-2 mt-4 p-3 rounded-lg bg-warning-500/10 border border-warning-500/20">
           <Shield className="w-4 h-4 text-warning-400 shrink-0 mt-0.5" />
           <p className="text-xs text-warning-300">
-            Your credentials are stored securely. The userbot uses your personal Telegram account to access groups. Make sure you comply with Telegram's Terms of Service.
+            {t('tg.setupWarning')}
           </p>
         </div>
       </div>
