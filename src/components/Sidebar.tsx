@@ -4,7 +4,9 @@ import {
   DownloadCloud,
   LayoutDashboard,
   Link2,
+  LogOut,
   Settings,
+  ShieldCheck,
   Users,
   Wand2,
   Languages,
@@ -20,9 +22,10 @@ interface SidebarProps {
   currentPage: PageKey;
   onNavigate: (page: PageKey) => void;
   collapsed: boolean;
+  isAdmin?: boolean;
 }
 
-export function Sidebar({ currentPage, onNavigate, collapsed }: SidebarProps) {
+export function Sidebar({ currentPage, onNavigate, collapsed, isAdmin }: SidebarProps) {
   const [queueCount, setQueueCount] = useState(0);
   const [activeGroups, setActiveGroups] = useState(0);
   const [automationCount, setAutomationCount] = useState(0);
@@ -51,6 +54,7 @@ export function Sidebar({ currentPage, onNavigate, collapsed }: SidebarProps) {
     { key: 'urllists', label: t('nav.urllists'), icon: Link2 },
     { key: 'settings', label: t('nav.settings'), icon: Settings },
     { key: 'guide', label: t('nav.guide'), icon: BookOpen },
+    ...(isAdmin ? [{ key: 'admin' as PageKey, label: t('nav.admin'), icon: ShieldCheck }] : []),
   ];
 
   // Green only when everything the app needs is actually reachable.
@@ -149,6 +153,17 @@ export function Sidebar({ currentPage, onNavigate, collapsed }: SidebarProps) {
               </p>
             </div>
           )}
+        </button>
+
+        <button
+          onClick={() => supabase.auth.signOut()}
+          className={`flex w-full items-center gap-2 rounded-lg px-3 py-2 text-xs font-medium text-dark-400 transition-colors hover:bg-error-500/10 hover:text-error-400 ${
+            collapsed ? 'justify-center' : ''
+          }`}
+          title={collapsed ? t('auth.signOut') : undefined}
+        >
+          <LogOut className="h-3.5 w-3.5 shrink-0" />
+          {!collapsed && <span>{t('auth.signOut')}</span>}
         </button>
       </div>
     </aside>

@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import {
   Database,
   Cloud,
@@ -12,16 +12,24 @@ import {
   FileVideo,
   RefreshCw,
   AlertTriangle,
+  Copy,
+  Check,
+  Clapperboard,
+  Download,
 } from 'lucide-react';
 import { supabase } from '@/lib/supabase';
-import { backendConfigured, testR2Connection } from '@/lib/backend';
+import { backendConfigured, r2DownloadUrl, testR2Connection } from '@/lib/backend';
 import { R2Uploader } from '@/components/R2Uploader';
-import type { R2Settings, Episode } from '@/lib/types';
+import { useLanguage } from '@/lib/i18n';
+import type { R2Settings, Episode, Group, Topic } from '@/lib/types';
 import { formatBytes, formatTimeAgo } from '@/lib/utils';
 
 export function R2Page() {
+  const { t } = useLanguage();
   const [settings, setSettings] = useState<R2Settings | null>(null);
   const [episodes, setEpisodes] = useState<Episode[]>([]);
+  const [groups, setGroups] = useState<Group[]>([]);
+  const [topics, setTopics] = useState<Topic[]>([]);
   const [saving, setSaving] = useState(false);
   const [connected, setConnected] = useState(false);
   const [loading, setLoading] = useState(true);
@@ -29,12 +37,13 @@ export function R2Page() {
   const [error, setError] = useState('');
   const [notice, setNotice] = useState('');
   const [remoteStats, setRemoteStats] = useState<{ object_count?: number; total_bytes?: number } | null>(null);
+  const [copied, setCopied] = useState('');
 
   useEffect(() => {
     (async () => {
       const { data, error: loadError } = await supabase.from('r2_settings').select('*').maybeSingle();
       if (loadError) {
-        setError('Could not load R2 settings. Please refresh and try again.');
+        setError(t('r2.errLoadSettings'));
       } else if (data) {
         setSettings(data as R2Settings);
         setConnected((data as R2Settings).connected);
@@ -45,11 +54,53 @@ export function R2Page() {
           connected: false, last_connected_at: null, created_at: '', updated_at: '',
         });
       }
-      const { data: epData } = await supabase.from('episodes').select('*').not('r2_key', 'is', null).order('updated_at', { ascending: false });
+      const [{ data: epData }, { data: groupData }, { data: topicData }] = await Promise.all([
+        supabase.from('episodes').select('*').not('r2_key', 'is', null).order('ep_number', { ascending: true }),
+        supabase.from('groups').select('*'),
+        supabase.from('topics').select('*'),
+      ]);
       setEpisodes((epData as Episode[]) || []);
+      setGroups((groupData as Group[]) || []);
+      setTopics((topicData as Topic[]) || []);
       setLoading(false);
     })();
   }, []);
+
+  const copy = async (text: string, id: string) => {
+    try {
+      await navigator.clipboard.writeText(text);
+      setCopied(id);
+      setTimeout(() => setCopied((c) => (c === id ? '' : c)), 1500);
+    } catch {
+      setCopied('');
+    }
+  };
+
+  /** Groups episodes by show (and season, when set), sorted the same way the show library is. */
+  const shows = useMemo(() => {
+    const groupById = new Map(groups.map((g) => [g.id, g]));
+    const topicById = new Map(topics.map((t) => [t.id, t]));
+    const byGroup = new Map<string, Episode[]>();
+    for (const ep of episodes) {
+      const list = byGroup.get(ep.group_id);
+      if (list) list.push(ep);
+      else byGroup.set(ep.group_id, [ep]);
+    }
+    return Array.from(byGroup.entries())
+      .map(([groupId, eps]) => ({
+        group: groupById.get(groupId),
+        episodes: [...eps].sort((a, b) => {
+          const seasonA = topicById.get(a.topic_id || '')?.title || '';
+          const seasonB = topicById.get(b.topic_id || '')?.title || '';
+          if (seasonA !== seasonB) return seasonA.localeCompare(seasonB);
+          return (a.ep_number ?? 0) - (b.ep_number ?? 0);
+        }),
+        topicById,
+      }))
+      .sort((a, b) => (a.group?.title || '').localeCompare(b.group?.title || ''));
+  }, [episodes, groups, topics]);
+
+  const urlFor = (ep: Episode) => ep.r2_url || (ep.r2_key && settings?.public_url ? `${settings.public_url.replace(/\/+$/, '')}/${ep.r2_key}` : null);
 
   /** Persists the form and returns the row id, or null when the save failed. */
   const handleSave = async (): Promise<string | null> => {
@@ -78,7 +129,7 @@ export function R2Page() {
 
     let savedId: string | null = settings.id || null;
     if (result.error) {
-      setError('Could not save R2 settings. Please try again.');
+      setError(t('r2.errSaveSettings'));
       savedId = null;
     } else if (!settings.id && result.data) {
       savedId = (result.data as R2Settings).id;
@@ -93,11 +144,11 @@ export function R2Page() {
     setError('');
     setNotice('');
     if (!settings.account_id || !settings.access_key_id || !settings.secret_access_key || !settings.bucket_name) {
-      setError('Fill in the Account ID, Access Key ID, Secret Access Key and Bucket Name first.');
+      setError(t('r2.errFillFields'));
       return;
     }
     if (!backendConfigured) {
-      setError('No backend is configured (VITE_TELEGRAM_BACKEND_URL), so the credentials cannot be verified from the browser.');
+      setError(t('r2.errNoBackend'));
       return;
     }
     setTesting(true);
@@ -116,13 +167,13 @@ export function R2Page() {
       const now = new Date().toISOString();
       await supabase.from('r2_settings').update({ connected: true, last_connected_at: now }).eq('id', rowId);
       setSettings((prev) => (prev ? { ...prev, id: rowId, connected: true, last_connected_at: now } : prev));
-      setNotice(`Connected to ${result.bucket || settings.bucket_name}.`);
+      setNotice(t('r2.connectedNotice').replace('{bucket}', result.bucket || settings.bucket_name || ''));
     } catch (err) {
       setConnected(false);
       if (savedId) {
         await supabase.from('r2_settings').update({ connected: false }).eq('id', savedId);
       }
-      setError(err instanceof Error ? err.message : 'Could not reach the R2 bucket with these credentials.');
+      setError(err instanceof Error ? err.message : t('r2.errTestFailed'));
     }
     setTesting(false);
   };
@@ -163,20 +214,20 @@ export function R2Page() {
               <Cloud className={`w-6 h-6 ${connected ? 'text-success-400' : 'text-dark-500'}`} />
             </div>
             <div>
-              <h2 className="text-base font-bold text-white">Cloudflare R2 Storage</h2>
+              <h2 className="text-base font-bold text-white">{t('r2.title')}</h2>
               <p className="text-xs text-dark-500">
-                {connected ? `Connected to ${settings?.bucket_name || 'bucket'}` : 'Not connected — configure your R2 credentials'}
+                {connected ? t('r2.connectedToSubtitle').replace('{bucket}', settings?.bucket_name || t('r2.bucketFallback')) : t('r2.notConnected')}
               </p>
             </div>
           </div>
           <div className="flex items-center gap-2">
             {connected ? (
               <span className="flex items-center gap-2 px-3 py-1.5 rounded-lg bg-success-500/10 text-success-400 text-xs font-medium">
-                <CheckCircle2 className="w-4 h-4" /> Connected {settings?.last_connected_at && `· ${formatTimeAgo(settings.last_connected_at)}`}
+                <CheckCircle2 className="w-4 h-4" /> {t('r2.connected')} {settings?.last_connected_at && `· ${formatTimeAgo(settings.last_connected_at)}`}
               </span>
             ) : (
               <span className="flex items-center gap-2 px-3 py-1.5 rounded-lg bg-dark-800 text-dark-400 text-xs font-medium">
-                <XCircle className="w-4 h-4" /> Disconnected
+                <XCircle className="w-4 h-4" /> {t('r2.disconnected')}
               </span>
             )}
           </div>
@@ -189,28 +240,28 @@ export function R2Page() {
           <div className="rounded-xl border border-dark-800 bg-dark-900/60 p-4">
             <div className="flex items-center gap-2 mb-3">
               <HardDrive className="w-4 h-4 text-accent-400" />
-              <h3 className="text-sm font-semibold text-white">Storage Used</h3>
+              <h3 className="text-sm font-semibold text-white">{t('r2.storageUsed')}</h3>
             </div>
             <p className="text-2xl font-bold text-white tabular-nums">{formatBytes(totalSize)}</p>
             <div className="h-2 bg-dark-800 rounded-full overflow-hidden mt-2">
               <div className="h-full bg-gradient-to-r from-accent-500 to-primary-500 rounded-full" style={{ width: `${Math.min((totalSize / (50 * 1024 * 1024 * 1024)) * 100, 100)}%` }} />
             </div>
-            <p className="text-[10px] text-dark-500 mt-1">{formatBytes(totalSize)} of 50 GB</p>
+            <p className="text-[10px] text-dark-500 mt-1">{t('r2.ofSize').replace('{size}', formatBytes(totalSize))}</p>
           </div>
           <div className="rounded-xl border border-dark-800 bg-dark-900/60 p-4">
             <div className="flex items-center gap-2 mb-3">
               <FileVideo className="w-4 h-4 text-primary-400" />
-              <h3 className="text-sm font-semibold text-white">Files in R2</h3>
+              <h3 className="text-sm font-semibold text-white">{t('r2.filesInR2')}</h3>
             </div>
             <p className="text-2xl font-bold text-white tabular-nums">{remoteStats?.object_count ?? episodes.length}</p>
             <p className="text-xs text-dark-500 mt-1">
-              {remoteStats?.object_count !== undefined ? 'Objects in the bucket' : 'Video files uploaded'}
+              {remoteStats?.object_count !== undefined ? t('r2.objectsInBucket') : t('r2.videoFilesUploaded')}
             </p>
           </div>
           <div className="rounded-xl border border-dark-800 bg-dark-900/60 p-4">
             <div className="flex items-center gap-2 mb-3">
               <Folder className="w-4 h-4 text-warning-400" />
-              <h3 className="text-sm font-semibold text-white">Bucket</h3>
+              <h3 className="text-sm font-semibold text-white">{t('r2.bucket')}</h3>
             </div>
             <p className="text-sm text-white font-medium truncate">{settings?.bucket_name || '—'}</p>
             <p className="text-xs text-dark-500 mt-1">{settings?.region || 'auto'}</p>
@@ -221,16 +272,16 @@ export function R2Page() {
       {/* Configuration Form */}
       <div className="rounded-xl border border-dark-800 bg-dark-900/60 p-5">
         <h3 className="text-sm font-semibold text-white mb-4 flex items-center gap-2">
-          <Database className="w-4 h-4 text-primary-400" /> R2 Configuration
+          <Database className="w-4 h-4 text-primary-400" /> {t('r2.configuration')}
         </h3>
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-          <Field label="Account ID" value={settings?.account_id || ''} onChange={(v) => update('account_id', v)} placeholder="Your Cloudflare Account ID" mono />
-          <Field label="Bucket Name" value={settings?.bucket_name || ''} onChange={(v) => update('bucket_name', v)} placeholder="my-videos" />
-          <Field label="Access Key ID" value={settings?.access_key_id || ''} onChange={(v) => update('access_key_id', v)} placeholder="R2 access key ID" mono type="password" />
-          <Field label="Secret Access Key" value={settings?.secret_access_key || ''} onChange={(v) => update('secret_access_key', v)} placeholder="R2 secret access key" mono type="password" />
-          <Field label="Endpoint URL" value={settings?.endpoint_url || ''} onChange={(v) => update('endpoint_url', v)} placeholder="https://<account>.r2.cloudflarestorage.com" mono />
-          <Field label="Public URL (optional)" value={settings?.public_url || ''} onChange={(v) => update('public_url', v)} placeholder="https://cdn.example.com" mono />
-          <Field label="Region" value={settings?.region || 'auto'} onChange={(v) => update('region', v)} placeholder="auto" />
+          <Field label={t('r2.accountId')} value={settings?.account_id || ''} onChange={(v) => update('account_id', v)} placeholder={t('r2.placeholderAccountId')} mono />
+          <Field label={t('r2.bucketName')} value={settings?.bucket_name || ''} onChange={(v) => update('bucket_name', v)} placeholder={t('r2.placeholderBucketName')} />
+          <Field label={t('r2.accessKeyId')} value={settings?.access_key_id || ''} onChange={(v) => update('access_key_id', v)} placeholder={t('r2.placeholderAccessKeyId')} mono type="password" />
+          <Field label={t('r2.secretAccessKey')} value={settings?.secret_access_key || ''} onChange={(v) => update('secret_access_key', v)} placeholder={t('r2.placeholderSecretAccessKey')} mono type="password" />
+          <Field label={t('r2.endpointUrl')} value={settings?.endpoint_url || ''} onChange={(v) => update('endpoint_url', v)} placeholder="https://<account>.r2.cloudflarestorage.com" mono />
+          <Field label={t('r2.publicUrlOptional')} value={settings?.public_url || ''} onChange={(v) => update('public_url', v)} placeholder="https://cdn.example.com" mono />
+          <Field label={t('r2.region')} value={settings?.region || 'auto'} onChange={(v) => update('region', v)} placeholder="auto" />
         </div>
         <div className="flex items-center gap-3 mt-5">
           <button
@@ -238,14 +289,14 @@ export function R2Page() {
             disabled={saving}
             className="flex items-center gap-2 px-4 py-2.5 rounded-lg bg-primary-500 hover:bg-primary-600 text-white text-sm font-medium transition-colors disabled:opacity-50"
           >
-            {saving ? <Loader2 className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4" />} Save Settings
+            {saving ? <Loader2 className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4" />} {t('r2.saveSettings')}
           </button>
           <button
             onClick={handleTest}
             disabled={testing || saving}
             className="flex items-center gap-2 px-4 py-2.5 rounded-lg bg-dark-800 hover:bg-dark-700 text-dark-300 text-sm font-medium transition-colors disabled:opacity-50"
           >
-            {testing ? <Loader2 className="w-4 h-4 animate-spin" /> : <RefreshCw className="w-4 h-4" />} Test Connection
+            {testing ? <Loader2 className="w-4 h-4 animate-spin" /> : <RefreshCw className="w-4 h-4" />} {t('r2.testConnection')}
           </button>
         </div>
       </div>
@@ -253,25 +304,80 @@ export function R2Page() {
       {/* Upload videos by hand, straight into the bucket */}
       <R2Uploader publicUrl={settings?.public_url || ''} />
 
-      {/* Files in R2 */}
-      {connected && episodes.length > 0 && (
+      {/* Files in R2, organized by show and episode number instead of a flat key list */}
+      {episodes.length > 0 && (
         <div className="rounded-xl border border-dark-800 bg-dark-900/60 p-5">
           <h3 className="text-sm font-semibold text-white mb-4 flex items-center gap-2">
-            <FileVideo className="w-4 h-4 text-accent-400" /> Files in R2 Storage
+            <FileVideo className="w-4 h-4 text-accent-400" /> {t('r2.filesInR2Storage')}
+            <span className="text-dark-500 font-normal">({episodes.length})</span>
           </h3>
-          <div className="space-y-1.5 max-h-96 overflow-y-auto">
-            {episodes.map((ep) => (
-              <div key={ep.id} className="flex items-center gap-3 p-3 rounded-lg bg-dark-800/30 hover:bg-dark-800/60 transition-colors">
-                <FileVideo className="w-4 h-4 text-dark-500 shrink-0" />
-                <div className="flex-1 min-w-0">
-                  <p className="text-sm text-white truncate font-medium">{ep.r2_key || ep.file_name || `EP${ep.ep_number}`}</p>
-                  <p className="text-[10px] text-dark-500">{formatBytes(ep.file_size)}</p>
+          <div className="space-y-4 max-h-[32rem] overflow-y-auto pr-1">
+            {shows.map(({ group, episodes: eps, topicById }) => (
+              <div key={group?.id || 'unknown'}>
+                <div className="flex items-center gap-2 mb-1.5 px-0.5">
+                  <Clapperboard className="w-3.5 h-3.5 text-primary-400 shrink-0" />
+                  <h4 className="text-xs font-semibold text-white truncate">{group?.title || t('r2.unknownShow')}</h4>
+                  <span className="text-[10px] text-dark-500">
+                    {(eps.length === 1 ? t('r2.episodeCountOne') : t('r2.episodeCountMany')).replace('{n}', String(eps.length))}
+                  </span>
                 </div>
-                {ep.r2_key && settings?.public_url && (
-                  <a href={`${settings.public_url}/${ep.r2_key}`} target="_blank" rel="noreferrer" className="p-1.5 rounded-lg hover:bg-dark-700 text-dark-500 hover:text-white transition-colors">
-                    <ExternalLink className="w-3.5 h-3.5" />
-                  </a>
-                )}
+                <div className="space-y-1.5">
+                  {eps.map((ep) => {
+                    const url = urlFor(ep);
+                    const season = topicById.get(ep.topic_id || '')?.title;
+                    const label = ep.ep_number != null ? t('r2.episodeLabel').replace('{n}', String(ep.ep_number)) : ep.title || ep.file_name || t('r2.untitled');
+                    return (
+                      <div key={ep.id} className="flex items-center gap-3 p-2.5 rounded-lg bg-dark-800/30 hover:bg-dark-800/60 transition-colors">
+                        <FileVideo className="w-4 h-4 text-dark-500 shrink-0" />
+                        <div className="flex-1 min-w-0">
+                          <div className="flex items-center gap-2">
+                            <p className="text-xs text-white truncate font-medium">{label}</p>
+                            {season && (
+                              <span className="shrink-0 text-[10px] px-1.5 py-0.5 rounded bg-dark-700 text-dark-300">
+                                {season}
+                              </span>
+                            )}
+                          </div>
+                          <p className="text-[10px] text-dark-500 font-mono truncate">{ep.r2_key}</p>
+                          <p className="text-[10px] text-dark-500">{formatBytes(ep.file_size)}</p>
+                        </div>
+                        {url && (
+                          <>
+                            <button
+                              onClick={() => void copy(url, ep.id)}
+                              title={t('r2.copyUrl')}
+                              className="p-1.5 rounded-lg hover:bg-dark-700 text-dark-500 hover:text-white transition-colors"
+                            >
+                              {copied === ep.id ? (
+                                <Check className="w-3.5 h-3.5 text-success-400" />
+                              ) : (
+                                <Copy className="w-3.5 h-3.5" />
+                              )}
+                            </button>
+                            <a
+                              href={url}
+                              target="_blank"
+                              rel="noreferrer"
+                              title={t('r2.open')}
+                              className="p-1.5 rounded-lg hover:bg-dark-700 text-dark-500 hover:text-white transition-colors"
+                            >
+                              <ExternalLink className="w-3.5 h-3.5" />
+                            </a>
+                          </>
+                        )}
+                        {backendConfigured && ep.r2_key && (
+                          <a
+                            href={r2DownloadUrl(ep.r2_key, ep.file_name ?? undefined)}
+                            title={t('r2.downloadToDevice')}
+                            className="p-1.5 rounded-lg hover:bg-dark-700 text-dark-500 hover:text-white transition-colors"
+                          >
+                            <Download className="w-3.5 h-3.5" />
+                          </a>
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
               </div>
             ))}
           </div>
@@ -280,14 +386,14 @@ export function R2Page() {
 
       {/* Setup Guide */}
       <div className="rounded-xl border border-dark-800 bg-dark-900/60 p-5">
-        <h3 className="text-sm font-semibold text-white mb-3">How to get R2 credentials</h3>
+        <h3 className="text-sm font-semibold text-white mb-3">{t('r2.setupGuideTitle')}</h3>
         <div className="space-y-2 text-xs text-dark-400">
           {[
-            'Go to Cloudflare Dashboard > R2 Object Storage',
-            'Create a new bucket (e.g. "my-videos")',
-            'Go to Manage R2 API Tokens > Create API Token',
-            'Copy the Account ID, Access Key ID, and Secret Access Key',
-            'Paste them here and click "Test Connection"',
+            t('r2.setupStep1'),
+            t('r2.setupStep2'),
+            t('r2.setupStep3'),
+            t('r2.setupStep4'),
+            t('r2.setupStep5'),
           ].map((step, i) => (
             <div key={i} className="flex items-start gap-3">
               <span className="w-5 h-5 rounded-full bg-primary-500/20 text-primary-400 flex items-center justify-center text-[10px] font-bold shrink-0">{i + 1}</span>

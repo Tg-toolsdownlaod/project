@@ -1,3 +1,6 @@
+import { supabase } from '@/lib/supabase';
+import type { PaymentSubmission } from '@/lib/types';
+
 const BACKEND_URL = import.meta.env.VITE_TELEGRAM_BACKEND_URL as string | undefined;
 const BACKEND_KEY = import.meta.env.VITE_TELEGRAM_BACKEND_KEY as string | undefined;
 
@@ -27,6 +30,24 @@ export async function callBackend<T = Record<string, unknown>>(
     throw new Error(data.error || 'Request to backend failed.');
   }
   return data as T;
+}
+
+export interface TelegramLoginResult {
+  /** The synthetic email the Telegram account is signed in as -- opaque, not shown to the user. */
+  email: string;
+  /** A one-time token; the caller exchanges it via supabase.auth.verifyOtp({token_hash, type: 'magiclink'}). */
+  token_hash: string;
+}
+
+/**
+ * Hands the signed payload from the Telegram Login Widget to the backend for
+ * verification, and gets back a one-time token to trade for a real Supabase
+ * session. Unauthenticated on purpose -- this is how a visitor gets a
+ * session in the first place -- so it works even before backendConfigured's
+ * usual x-api-key would apply.
+ */
+export function telegramLogin(payload: Record<string, unknown>) {
+  return callBackend<TelegramLoginResult>('/api/auth/telegram-login', payload);
 }
 
 export interface ResolvedGroupInfo {
@@ -86,7 +107,18 @@ export interface R2UploadResult {
 export function uploadToR2(
   file: File,
   options: {
+    /** A full, readable object key (e.g. "naruto/season-1/EP007.mp4"). Takes priority over `folder`. */
+    key?: string;
     folder?: string;
+    /**
+     * When set, the backend also files this upload as an episode (see
+     * library.js) so it shows up in Groups/Downloads next to videos pulled
+     * from Telegram -- grouped by show, sorted by episode number.
+     */
+    show?: string;
+    season?: string;
+    episode?: number;
+    label?: string;
     onProgress?: (loaded: number, total: number) => void;
     signal?: AbortSignal;
   } = {}
@@ -96,7 +128,13 @@ export function uploadToR2(
       reject(new Error('Backend URL is not configured (VITE_TELEGRAM_BACKEND_URL).'));
       return;
     }
-    const query = new URLSearchParams({ name: file.name, folder: options.folder || 'uploads' });
+    const query = new URLSearchParams({ name: file.name });
+    if (options.key) query.set('key', options.key);
+    else query.set('folder', options.folder || 'uploads');
+    if (options.show) query.set('show', options.show);
+    if (options.season) query.set('season', options.season);
+    if (options.episode !== undefined) query.set('episode', String(options.episode));
+    if (options.label) query.set('label', options.label);
     const xhr = new XMLHttpRequest();
     xhr.open('POST', `${BACKEND_URL}/api/r2/upload?${query}`);
     xhr.setRequestHeader('Content-Type', file.type || 'application/octet-stream');
@@ -142,6 +180,74 @@ export function listR2Objects(prefix = '', limit = 100) {
 /** Removes one object from the bucket. */
 export function deleteR2Object(key: string) {
   return callBackend('/api/r2/delete', { key });
+}
+
+/**
+ * A URL that, opened directly (an <a href>, not fetch), makes the browser
+ * save the object to the device -- the backend streams it through with
+ * Content-Disposition: attachment, so this works even when the bucket has no
+ * public URL configured at all. Returns '' when no backend is configured.
+ */
+export function r2DownloadUrl(key: string, filename?: string): string {
+  if (!BACKEND_URL) return '';
+  const params = new URLSearchParams({ key });
+  if (BACKEND_KEY) params.set('api_key', BACKEND_KEY);
+  if (filename) params.set('filename', filename);
+  return `${BACKEND_URL}/api/r2/download?${params.toString()}`;
+}
+
+/** Verifies the stored source-S3 credentials really can reach that bucket. */
+export function testS3SourceConnection() {
+  return callBackend<R2TestResult>('/api/s3source/test');
+}
+
+export interface S3SourceObject {
+  key: string;
+  size: number;
+  last_modified: string | null;
+}
+
+/** Lists what is really in the source bucket under a prefix, newest first. */
+export function listS3SourceObjects(prefix = '', limit = 100) {
+  return callBackend<{ bucket: string; objects: S3SourceObject[]; total: number }>('/api/s3source/objects', {
+    prefix,
+    limit,
+  });
+}
+
+export interface S3MigrationStatus {
+  running: boolean;
+  dry_run: boolean;
+  prefix: string;
+  started_at: string | null;
+  finished_at: string | null;
+  total: number;
+  scanned: number;
+  migrated: number;
+  skipped: number;
+  deleted: number;
+  failed: number;
+  bytes: number;
+  errors: { key: string; error: string }[];
+}
+
+/**
+ * Starts streaming every object from the source bucket into R2 (deleting it
+ * from the source once confirmed there, unless deleteSource is false).
+ * Answers as soon as the job is queued -- follow progress with
+ * getS3MigrationStatus().
+ */
+export function startS3Migration(options: { prefix?: string; dryRun?: boolean; deleteSource?: boolean } = {}) {
+  return callBackend<{ status: string }>('/api/s3import/run', {
+    prefix: options.prefix ?? '',
+    dry_run: options.dryRun ?? false,
+    delete_source: options.deleteSource ?? true,
+  });
+}
+
+/** The current or most recent migration run's counters, for a progress bar. */
+export function getS3MigrationStatus() {
+  return callBackend<S3MigrationStatus>('/api/s3import/status');
 }
 
 /**
@@ -198,6 +304,22 @@ export function joinChat(invite: string) {
   return callBackend<ResolvedGroupInfo & { chat_id: string }>('/api/telegram/join', { invite });
 }
 
+export interface PublicChatResult {
+  chat_id: string;
+  title: string;
+  username: string | null;
+  is_channel: boolean;
+  is_megagroup: boolean;
+  participants_count: number | null;
+  /** True/false when known, undefined when Telegram didn't report membership for this kind of chat. */
+  already_joined?: boolean;
+}
+
+/** Searches Telegram's public directory by keyword -- groups/channels not yet joined included. */
+export function searchPublicChats(query: string, limit = 20) {
+  return callBackend<{ results: PublicChatResult[] }>('/api/telegram/groups/search', { query, limit });
+}
+
 /** Sends a short message to the userbot's own Saved Messages. */
 export function notifySelf(text: string) {
   return callBackend('/api/telegram/notify', { text });
@@ -234,4 +356,76 @@ export function startTakeout() {
 /** Ends the active takeout session; downloads and forwards go back to normal. */
 export function stopTakeout(success = true) {
   return callBackend<TakeoutResult>('/api/telegram/takeout/stop', { success });
+}
+
+// ------------------------------------------------------------ subscriptions
+//
+// These routes are gated by the caller's own Supabase session (requireUser/
+// requireAdmin in server.js), not the shared x-api-key every call above
+// uses -- callBackend can't be reused here, since it always sends that key
+// and never the caller's own JWT.
+
+async function callAuthedBackend<T = Record<string, unknown>>(
+  path: string,
+  body?: Record<string, unknown>
+): Promise<T> {
+  if (!BACKEND_URL) {
+    throw new Error('Backend URL is not configured (VITE_TELEGRAM_BACKEND_URL).');
+  }
+  const { data } = await supabase.auth.getSession();
+  const token = data.session?.access_token;
+  if (!token) throw new Error('Not signed in.');
+  const res = await fetch(`${BACKEND_URL}${path}`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      Authorization: `Bearer ${token}`,
+    },
+    body: JSON.stringify(body || {}),
+  });
+  const json = await res.json().catch(() => ({}));
+  if (!res.ok || json.success === false) {
+    throw new Error(json.error || 'Request to backend failed.');
+  }
+  return json as T;
+}
+
+/** Creates a pending payment claim for the signed-in subscriber. */
+export function submitPaymentClaim(tier: string) {
+  return callAuthedBackend<{ submission: PaymentSubmission }>('/api/subscription/submit', { tier });
+}
+
+/** Attaches an uploaded screenshot to the caller's own pending claim. */
+export function attachPaymentScreenshot(submissionId: string, screenshotUrl: string) {
+  return callAuthedBackend<{ submission: PaymentSubmission }>('/api/subscription/attach-screenshot', {
+    submission_id: submissionId,
+    screenshot_url: screenshotUrl,
+  });
+}
+
+/** Abandons the caller's own pending claim (e.g. switching plans). */
+export function cancelPaymentClaim(submissionId: string) {
+  return callAuthedBackend('/api/subscription/cancel', { submission_id: submissionId });
+}
+
+export interface SubscriptionStatusResult {
+  subscribed: boolean;
+  tier: string | null;
+  capability: 'basic' | 'pro' | null;
+  expiresAt: string | null;
+}
+
+/** The signed-in subscriber's own current plan/expiry. */
+export function getSubscriptionStatus() {
+  return callAuthedBackend<SubscriptionStatusResult>('/api/subscription/status');
+}
+
+/** Admin: approves a pending payment claim (same effect as the Telegram button). */
+export function approvePayment(submissionId: string) {
+  return callAuthedBackend(`/api/admin/payments/${submissionId}/approve`);
+}
+
+/** Admin: rejects a pending payment claim. */
+export function rejectPayment(submissionId: string, note?: string) {
+  return callAuthedBackend(`/api/admin/payments/${submissionId}/reject`, { note });
 }

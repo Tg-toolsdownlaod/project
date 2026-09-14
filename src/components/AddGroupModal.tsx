@@ -18,9 +18,12 @@ import {
   joinChat,
   listDialogs,
   resolveGroup,
+  searchPublicChats,
   type DialogInfo,
+  type PublicChatResult,
   type ResolvedGroupInfo,
 } from '@/lib/backend';
+import { useLanguage } from '@/lib/i18n';
 
 export interface NewGroupInput {
   chat_id: string;
@@ -29,7 +32,7 @@ export interface NewGroupInput {
   is_forum: boolean;
 }
 
-type Source = 'mine' | 'id' | 'invite';
+type Source = 'mine' | 'search' | 'id' | 'invite';
 
 export function AddGroupModal({
   onClose,
@@ -38,6 +41,7 @@ export function AddGroupModal({
   onClose: () => void;
   onAdd: (data: NewGroupInput) => void;
 }) {
+  const { t } = useLanguage();
   const [source, setSource] = useState<Source>(backendConfigured ? 'mine' : 'id');
 
   return (
@@ -49,18 +53,20 @@ export function AddGroupModal({
         className="max-h-[92vh] w-full max-w-md overflow-y-auto rounded-2xl border border-dark-700 bg-dark-900 p-6 shadow-2xl shadow-black/40 animate-slide-up"
         onClick={(e) => e.stopPropagation()}
       >
-        <h3 className="mb-1 text-lg font-bold text-white">Add Telegram Group</h3>
+        <h3 className="mb-1 text-lg font-bold text-white">{t('addGroup.title')}</h3>
         <p className="mb-4 text-xs text-dark-500">
-          Pick one of your groups, or paste a chat ID or invite link
+          {t('addGroup.subtitle')}
         </p>
 
-        <div className="mb-4 flex gap-1 rounded-xl border border-dark-800 bg-dark-800/40 p-1">
-          <SourceTab active={source === 'mine'} onClick={() => setSource('mine')} icon={<List className="h-3.5 w-3.5" />} label="My groups" />
-          <SourceTab active={source === 'id'} onClick={() => setSource('id')} icon={<Hash className="h-3.5 w-3.5" />} label="Chat ID" />
-          <SourceTab active={source === 'invite'} onClick={() => setSource('invite')} icon={<Link2 className="h-3.5 w-3.5" />} label="Invite link" />
+        <div className="mb-4 flex flex-wrap gap-1 rounded-xl border border-dark-800 bg-dark-800/40 p-1">
+          <SourceTab active={source === 'mine'} onClick={() => setSource('mine')} icon={<List className="h-3.5 w-3.5" />} label={t('addGroup.tabMyGroups')} />
+          <SourceTab active={source === 'search'} onClick={() => setSource('search')} icon={<Search className="h-3.5 w-3.5" />} label={t('addGroup.tabSearch')} />
+          <SourceTab active={source === 'id'} onClick={() => setSource('id')} icon={<Hash className="h-3.5 w-3.5" />} label={t('addGroup.tabChatId')} />
+          <SourceTab active={source === 'invite'} onClick={() => setSource('invite')} icon={<Link2 className="h-3.5 w-3.5" />} label={t('addGroup.tabInvite')} />
         </div>
 
         {source === 'mine' && <MyGroups onAdd={onAdd} onFallback={() => setSource('id')} />}
+        {source === 'search' && <SearchGroups onAdd={onAdd} />}
         {source === 'id' && <ByChatId onAdd={onAdd} onClose={onClose} />}
         {source === 'invite' && <ByInvite onAdd={onAdd} />}
       </div>
@@ -94,6 +100,7 @@ function SourceTab({
 
 /** Lists the groups the userbot is already in — no chat ID to copy. */
 function MyGroups({ onAdd, onFallback }: { onAdd: (data: NewGroupInput) => void; onFallback: () => void }) {
+  const { t } = useLanguage();
   const [dialogs, setDialogs] = useState<DialogInfo[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
@@ -102,7 +109,7 @@ function MyGroups({ onAdd, onFallback }: { onAdd: (data: NewGroupInput) => void;
   useEffect(() => {
     (async () => {
       if (!backendConfigured) {
-        setError('No userbot service is configured, so your groups cannot be listed.');
+        setError(t('addGroup.errNoBackendList'));
         setLoading(false);
         return;
       }
@@ -110,10 +117,11 @@ function MyGroups({ onAdd, onFallback }: { onAdd: (data: NewGroupInput) => void;
         const result = await listDialogs();
         setDialogs(result.dialogs ?? []);
       } catch (err) {
-        setError(err instanceof Error ? err.message : 'Could not load your groups.');
+        setError(err instanceof Error ? err.message : t('addGroup.errLoadGroups'));
       }
       setLoading(false);
     })();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   const filtered = useMemo(() => {
@@ -141,7 +149,7 @@ function MyGroups({ onAdd, onFallback }: { onAdd: (data: NewGroupInput) => void;
           onClick={onFallback}
           className="mt-3 rounded-lg bg-dark-800 px-3 py-1.5 text-[11px] font-medium text-dark-300 transition-colors hover:bg-dark-700 hover:text-white"
         >
-          Enter a chat ID instead
+          {t('addGroup.enterChatIdInstead')}
         </button>
       </div>
     );
@@ -154,7 +162,7 @@ function MyGroups({ onAdd, onFallback }: { onAdd: (data: NewGroupInput) => void;
         <input
           value={query}
           onChange={(e) => setQuery(e.target.value)}
-          placeholder={`Search ${dialogs.length} groups...`}
+          placeholder={t('addGroup.searchNGroups').replace('{n}', String(dialogs.length))}
           autoFocus
           className="flex-1 bg-transparent text-sm text-white placeholder-dark-600 outline-none"
         />
@@ -162,7 +170,7 @@ function MyGroups({ onAdd, onFallback }: { onAdd: (data: NewGroupInput) => void;
 
       <div className="max-h-80 space-y-1 overflow-y-auto pr-1">
         {filtered.length === 0 ? (
-          <p className="py-8 text-center text-xs text-dark-600">No group matches that search</p>
+          <p className="py-8 text-center text-xs text-dark-600">{t('addGroup.noGroupMatches')}</p>
         ) : (
           filtered.map((dialog) => (
             <button
@@ -195,7 +203,7 @@ function MyGroups({ onAdd, onFallback }: { onAdd: (data: NewGroupInput) => void;
               </div>
               {dialog.is_forum && (
                 <span className="shrink-0 rounded bg-accent-500/10 px-1.5 py-0.5 text-[9px] font-medium text-accent-400">
-                  FORUM
+                  {t('addGroup.forum')}
                 </span>
               )}
             </button>
@@ -206,8 +214,147 @@ function MyGroups({ onAdd, onFallback }: { onAdd: (data: NewGroupInput) => void;
   );
 }
 
+/**
+ * Finds public groups/channels the account has never joined (Telegram's own
+ * global directory search), then joins whichever one is picked before adding
+ * it -- so a show's group doesn't need to be found and joined by hand first.
+ */
+function SearchGroups({ onAdd }: { onAdd: (data: NewGroupInput) => void }) {
+  const { t } = useLanguage();
+  const [query, setQuery] = useState('');
+  const [results, setResults] = useState<PublicChatResult[]>([]);
+  const [searching, setSearching] = useState(false);
+  const [joiningId, setJoiningId] = useState<string | null>(null);
+  const [error, setError] = useState('');
+  const [searched, setSearched] = useState(false);
+  const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  useEffect(() => {
+    if (debounceRef.current) clearTimeout(debounceRef.current);
+    const q = query.trim();
+    if (q.length < 3) {
+      setResults([]);
+      setSearched(false);
+      return;
+    }
+    debounceRef.current = setTimeout(async () => {
+      setSearching(true);
+      setError('');
+      try {
+        const result = await searchPublicChats(q);
+        setResults(result.results);
+      } catch (err) {
+        setError(err instanceof Error ? err.message : t('addGroup.errSearchFailed'));
+      }
+      setSearched(true);
+      setSearching(false);
+    }, 500);
+    return () => {
+      if (debounceRef.current) clearTimeout(debounceRef.current);
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [query]);
+
+  const handleJoin = async (result: PublicChatResult) => {
+    setJoiningId(result.chat_id);
+    setError('');
+    try {
+      const joined = await joinChat(result.username ? `@${result.username}` : result.chat_id);
+      onAdd({
+        chat_id: joined.chat_id,
+        title: joined.title,
+        username: joined.username ?? '',
+        is_forum: joined.is_forum,
+      });
+    } catch (err) {
+      setError(err instanceof Error ? err.message : t('addGroup.errJoinFailed'));
+      setJoiningId(null);
+    }
+  };
+
+  if (!backendConfigured) {
+    return (
+      <div className="rounded-xl border border-dark-800 bg-dark-800/40 p-4 text-center">
+        <ShieldAlert className="mx-auto mb-2 h-6 w-6 text-warning-400" />
+        <p className="text-xs text-dark-400">{t('addGroup.errNoBackendSearch')}</p>
+      </div>
+    );
+  }
+
+  return (
+    <div className="space-y-3">
+      <div className="flex items-center gap-2 rounded-lg border border-dark-700 bg-dark-800 px-3 py-2">
+        <Search className="h-3.5 w-3.5 text-dark-500" />
+        <input
+          value={query}
+          onChange={(e) => setQuery(e.target.value)}
+          placeholder={t('addGroup.searchPublicPlaceholder')}
+          autoFocus
+          className="flex-1 bg-transparent text-sm text-white placeholder-dark-600 outline-none"
+        />
+        {searching && <Loader2 className="h-3.5 w-3.5 shrink-0 animate-spin text-dark-500" />}
+      </div>
+      <p className="text-[10px] text-dark-500">
+        {t('addGroup.searchPublicHint')}
+      </p>
+
+      {error && (
+        <p className="flex items-start gap-1.5 text-xs text-error-400">
+          <ShieldAlert className="mt-0.5 h-3.5 w-3.5 shrink-0" /> {error}
+        </p>
+      )}
+
+      <div className="max-h-72 space-y-1 overflow-y-auto pr-1">
+        {query.trim().length > 0 && query.trim().length < 3 && (
+          <p className="py-6 text-center text-xs text-dark-600">{t('addGroup.keepTyping')}</p>
+        )}
+        {searched && !searching && results.length === 0 && (
+          <p className="py-6 text-center text-xs text-dark-600">{t('addGroup.noPublicMatch')}</p>
+        )}
+        {results.map((result) => (
+          <div
+            key={result.chat_id}
+            className="flex items-center gap-3 rounded-lg bg-dark-800/40 p-2.5"
+          >
+            <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-gradient-to-br from-primary-500/30 to-accent-500/30">
+              <span className="text-sm font-bold text-white">{result.title.charAt(0).toUpperCase()}</span>
+            </div>
+            <div className="min-w-0 flex-1">
+              <p className="truncate text-sm font-medium text-white">{result.title}</p>
+              <div className="flex items-center gap-2 text-[10px] text-dark-500">
+                {result.username && <span className="text-accent-400">@{result.username}</span>}
+                {typeof result.participants_count === 'number' && (
+                  <span className="flex items-center gap-1">
+                    <Users className="h-2.5 w-2.5" /> {result.participants_count.toLocaleString()}
+                  </span>
+                )}
+                {result.already_joined && (
+                  <span className="rounded bg-success-500/10 px-1.5 py-0.5 font-medium text-success-400">{t('addGroup.joined')}</span>
+                )}
+              </div>
+            </div>
+            <button
+              onClick={() => handleJoin(result)}
+              disabled={joiningId === result.chat_id}
+              className="flex shrink-0 items-center gap-1.5 rounded-lg bg-primary-500 px-3 py-1.5 text-[11px] font-medium text-white transition-colors hover:bg-primary-600 disabled:cursor-not-allowed disabled:opacity-50"
+            >
+              {joiningId === result.chat_id ? (
+                <Loader2 className="h-3 w-3 animate-spin" />
+              ) : (
+                <Plus className="h-3 w-3" />
+              )}
+              {result.already_joined ? t('addGroup.add') : t('addGroup.joinAndAdd')}
+            </button>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
 /** Joins a public @name or a t.me/+hash link, then adds what it joined. */
 function ByInvite({ onAdd }: { onAdd: (data: NewGroupInput) => void }) {
+  const { t } = useLanguage();
   const [invite, setInvite] = useState('');
   const [joining, setJoining] = useState(false);
   const [error, setError] = useState('');
@@ -226,7 +373,7 @@ function ByInvite({ onAdd }: { onAdd: (data: NewGroupInput) => void }) {
         is_forum: result.is_forum,
       });
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Could not join this group.');
+      setError(err instanceof Error ? err.message : t('addGroup.errJoinFailed'));
       setJoining(false);
     }
   };
@@ -235,7 +382,7 @@ function ByInvite({ onAdd }: { onAdd: (data: NewGroupInput) => void }) {
     <div className="space-y-3">
       <div>
         <label className="mb-1.5 block text-xs font-medium text-dark-400">
-          Invite link or @username
+          {t('addGroup.inviteLabel')}
         </label>
         <input
           value={invite}
@@ -245,7 +392,7 @@ function ByInvite({ onAdd }: { onAdd: (data: NewGroupInput) => void }) {
           className="w-full rounded-lg border border-dark-700 bg-dark-800 px-3 py-2.5 font-mono text-sm text-white placeholder-dark-600 outline-none transition-colors focus:border-primary-500"
         />
         <p className="mt-1.5 text-[10px] text-dark-500">
-          Your account joins the group first, then it is added here.
+          {t('addGroup.inviteHint')}
         </p>
       </div>
 
@@ -261,7 +408,7 @@ function ByInvite({ onAdd }: { onAdd: (data: NewGroupInput) => void }) {
         className="flex w-full items-center justify-center gap-2 rounded-lg bg-primary-500 px-4 py-2.5 text-sm font-medium text-white transition-colors hover:bg-primary-600 disabled:cursor-not-allowed disabled:opacity-40"
       >
         {joining ? <Loader2 className="h-4 w-4 animate-spin" /> : <Link2 className="h-4 w-4" />}
-        Join & add
+        {t('addGroup.joinAndAdd')}
       </button>
     </div>
   );
@@ -269,6 +416,7 @@ function ByInvite({ onAdd }: { onAdd: (data: NewGroupInput) => void }) {
 
 /** The original flow: paste a chat ID and let the service confirm it. */
 function ByChatId({ onAdd, onClose }: { onAdd: (data: NewGroupInput) => void; onClose: () => void }) {
+  const { t } = useLanguage();
   const [chatId, setChatId] = useState('');
   const [title, setTitle] = useState('');
   const [username, setUsername] = useState('');
@@ -307,7 +455,7 @@ function ByChatId({ onAdd, onClose }: { onAdd: (data: NewGroupInput) => void; on
         setVerifyState('verified');
       } catch (err) {
         if (myRequestId !== requestIdRef.current) return;
-        setVerifyError(err instanceof Error ? err.message : 'Could not connect to this group.');
+        setVerifyError(err instanceof Error ? err.message : t('addGroup.errConnectFailed'));
         setVerifyState('failed');
       }
     }, 600);
@@ -326,7 +474,7 @@ function ByChatId({ onAdd, onClose }: { onAdd: (data: NewGroupInput) => void; on
   return (
     <form onSubmit={handleSubmit} className="space-y-4">
       <div>
-        <label className="mb-1.5 block text-xs font-medium text-dark-400">Chat ID *</label>
+        <label className="mb-1.5 block text-xs font-medium text-dark-400">{t('addGroup.chatIdLabel')}</label>
         <div className="relative">
           <Hash className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-dark-500" />
           <input
@@ -350,12 +498,12 @@ function ByChatId({ onAdd, onClose }: { onAdd: (data: NewGroupInput) => void; on
         </div>
 
         {verifyState === 'checking' && (
-          <p className="mt-1.5 text-xs text-dark-500">Connecting to Telegram to look up this group…</p>
+          <p className="mt-1.5 text-xs text-dark-500">{t('addGroup.connectingToTelegram')}</p>
         )}
         {verifyState === 'failed' && (
           <p className="mt-1.5 flex items-start gap-1.5 text-xs text-error-400">
             <ShieldAlert className="mt-0.5 h-3.5 w-3.5 shrink-0" />{' '}
-            {verifyError || "Couldn't find this group. Double-check the Chat ID."}
+            {verifyError || t('addGroup.groupNotFound')}
           </p>
         )}
         {verifyState === 'verified' && resolved && (
@@ -377,34 +525,37 @@ function ByChatId({ onAdd, onClose }: { onAdd: (data: NewGroupInput) => void; on
                   )}
                   {resolved.is_forum && (
                     <span className="rounded bg-primary-500/10 px-1.5 py-0.5 font-medium text-primary-400">
-                      FORUM
+                      {t('addGroup.forum')}
                     </span>
                   )}
                 </div>
               </div>
               <span className="flex shrink-0 items-center gap-1 text-[10px] font-medium text-success-400">
-                <CheckCircle2 className="h-3.5 w-3.5" /> Connected
+                <CheckCircle2 className="h-3.5 w-3.5" /> {t('addGroup.connected')}
               </span>
             </div>
 
             {resolved.topics && resolved.topics.length > 0 && (
               <div className="mt-3 border-t border-dark-800/80 pt-3">
                 <p className="mb-1.5 flex items-center gap-1.5 text-[10px] font-medium text-dark-500">
-                  <MessagesSquare className="h-3 w-3" /> {resolved.topics.length} topic
-                  {resolved.topics.length === 1 ? '' : 's'} found
+                  <MessagesSquare className="h-3 w-3" />{' '}
+                  {(resolved.topics.length === 1 ? t('addGroup.topicsFoundOne') : t('addGroup.topicsFoundMany')).replace(
+                    '{n}',
+                    String(resolved.topics.length)
+                  )}
                 </p>
                 <div className="flex max-h-24 flex-wrap gap-1.5 overflow-y-auto">
-                  {resolved.topics.slice(0, 12).map((t) => (
+                  {resolved.topics.slice(0, 12).map((topic) => (
                     <span
-                      key={t.topic_id}
+                      key={topic.topic_id}
                       className="max-w-[160px] truncate rounded-md border border-dark-700/60 bg-dark-800/70 px-2 py-1 text-[10px] text-dark-300"
                     >
-                      {t.title}
+                      {topic.title}
                     </span>
                   ))}
                   {resolved.topics.length > 12 && (
                     <span className="px-2 py-1 text-[10px] text-dark-500">
-                      +{resolved.topics.length - 12} more
+                      {t('addGroup.moreCount').replace('{n}', String(resolved.topics.length - 12))}
                     </span>
                   )}
                 </div>
@@ -416,12 +567,13 @@ function ByChatId({ onAdd, onClose }: { onAdd: (data: NewGroupInput) => void; on
 
       <div>
         <label className="mb-1.5 block text-xs font-medium text-dark-400">
-          Group Title {verifyState === 'verified' ? <span className="text-success-500">(auto-filled)</span> : '*'}
+          {t('addGroup.groupTitleLabel')}{' '}
+          {verifyState === 'verified' ? <span className="text-success-500">{t('addGroup.autoFilled')}</span> : '*'}
         </label>
         <input
           value={title}
           onChange={(e) => setTitle(e.target.value)}
-          placeholder="e.g. Anime Series"
+          placeholder={t('addGroup.groupTitlePlaceholder')}
           className="w-full rounded-lg border border-dark-700 bg-dark-800 px-3 py-2.5 text-sm text-white placeholder-dark-600 outline-none transition-colors focus:border-primary-500"
         />
       </div>
@@ -438,7 +590,7 @@ function ByChatId({ onAdd, onClose }: { onAdd: (data: NewGroupInput) => void; on
             }`}
           />
         </button>
-        <span className="text-sm text-dark-300">This is a forum (has topics/threads)</span>
+        <span className="text-sm text-dark-300">{t('addGroup.isForumLabel')}</span>
       </label>
 
       <div className="flex items-center gap-3 pt-2">
@@ -447,14 +599,14 @@ function ByChatId({ onAdd, onClose }: { onAdd: (data: NewGroupInput) => void; on
           onClick={onClose}
           className="flex-1 rounded-lg bg-dark-800 px-4 py-2.5 text-sm font-medium text-dark-300 transition-colors hover:bg-dark-700"
         >
-          Cancel
+          {t('addGroup.cancel')}
         </button>
         <button
           type="submit"
           disabled={!chatId || !title}
           className="flex flex-1 items-center justify-center gap-2 rounded-lg bg-primary-500 px-4 py-2.5 text-sm font-medium text-white transition-colors hover:bg-primary-600 disabled:cursor-not-allowed disabled:opacity-40"
         >
-          <Plus className="h-4 w-4" /> Add & Scan
+          <Plus className="h-4 w-4" /> {t('addGroup.addAndScan')}
         </button>
       </div>
     </form>

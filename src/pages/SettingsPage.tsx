@@ -1,22 +1,30 @@
 import { useState } from 'react';
-import { Database, Palette, SlidersHorizontal } from 'lucide-react';
+import { Database, Palette, Server, SlidersHorizontal } from 'lucide-react';
 
 import { Tabs } from '@/components/Tabs';
 import { TelegramGlyph } from '@/components/Brand';
+import { ProGate } from '@/components/ProGate';
 import { ThemeSwitcher } from '@/components/ThemeSwitcher';
 import { DownloadPreferences } from '@/pages/DownloadPreferences';
 import { R2Page } from '@/pages/R2Page';
+import { S3SourcePage } from '@/pages/S3SourcePage';
 import { TelegramPage } from '@/pages/TelegramPage';
 import { ACCENTS, useTheme } from '@/lib/theme';
 import { useLanguage } from '@/lib/i18n';
+import type { Capability } from '@/lib/types';
 
-type SettingsTab = 'telegram' | 'r2' | 'downloads' | 'appearance';
+type SettingsTab = 'telegram' | 'r2' | 's3source' | 'downloads' | 'appearance';
 
 /**
  * Telegram, R2 and download preferences used to be three sidebar entries that
  * were all "settings". They are tabs of one page now.
+ *
+ * `capability` decides which tabs a Basic subscriber can actually use:
+ * connecting your own Telegram account and your own storage (R2/S3 source)
+ * is Pro-only -- a Basic subscriber uses the app's shared userbot and shared
+ * storage transparently, with nothing of their own to configure there.
  */
-export function SettingsPage() {
+export function SettingsPage({ capability }: { capability: Capability }) {
   const { t } = useLanguage();
   const [tab, setTab] = useState<SettingsTab>('telegram');
 
@@ -28,13 +36,27 @@ export function SettingsPage() {
         tabs={[
           { key: 'telegram', label: t('tab.telegram'), icon: <TelegramGlyph className="h-3.5 w-3.5" /> },
           { key: 'r2', label: t('tab.r2'), icon: <Database className="h-3.5 w-3.5" /> },
+          { key: 's3source', label: t('tab.s3source'), icon: <Server className="h-3.5 w-3.5" /> },
           { key: 'downloads', label: t('tab.downloads'), icon: <SlidersHorizontal className="h-3.5 w-3.5" /> },
           { key: 'appearance', label: t('tab.appearance'), icon: <Palette className="h-3.5 w-3.5" /> },
         ]}
       />
 
-      {tab === 'telegram' && <TelegramPage />}
-      {tab === 'r2' && <R2Page />}
+      {tab === 'telegram' && (
+        <ProGate capability={capability}>
+          <TelegramPage />
+        </ProGate>
+      )}
+      {tab === 'r2' && (
+        <ProGate capability={capability}>
+          <R2Page />
+        </ProGate>
+      )}
+      {tab === 's3source' && (
+        <ProGate capability={capability}>
+          <S3SourcePage />
+        </ProGate>
+      )}
       {tab === 'downloads' && <DownloadPreferences />}
       {tab === 'appearance' && <AppearanceSettings />}
     </div>

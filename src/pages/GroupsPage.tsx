@@ -3,6 +3,7 @@ import {
   Plus,
   Users,
   Film,
+  Music,
   RefreshCw,
   Trash2,
   Download,
@@ -21,9 +22,11 @@ import {
   X,
   HardDrive,
   Copy as CopyIcon,
+  ExternalLink,
 } from 'lucide-react';
 import { supabase } from '@/lib/supabase';
-import { backendConfigured, callBackend } from '@/lib/backend';
+import { backendConfigured, callBackend, r2DownloadUrl } from '@/lib/backend';
+import { useLanguage, type TranslationKey } from '@/lib/i18n';
 import type { Episode, Group, Topic } from '@/lib/types';
 import { formatBytes, formatTimeAgo, getStatusColor } from '@/lib/utils';
 import { AddGroupModal, type NewGroupInput } from '@/components/AddGroupModal';
@@ -36,14 +39,14 @@ const NO_TOPIC = '__none__';
 /** The quick filters over a topic's videos, beyond the search and EP range. */
 type EpisodeFilter = 'all' | 'pending' | 'downloading' | 'completed' | 'failed' | 'in_r2' | 'not_in_r2';
 
-const EPISODE_FILTERS: { key: EpisodeFilter; label: string }[] = [
-  { key: 'all', label: 'All' },
-  { key: 'pending', label: 'Not downloaded' },
-  { key: 'downloading', label: 'In progress' },
-  { key: 'completed', label: 'Downloaded' },
-  { key: 'failed', label: 'Failed' },
-  { key: 'in_r2', label: 'In R2' },
-  { key: 'not_in_r2', label: 'Not in R2' },
+const EPISODE_FILTER_KEYS: { key: EpisodeFilter; labelKey: TranslationKey }[] = [
+  { key: 'all', labelKey: 'groups.filter.all' },
+  { key: 'pending', labelKey: 'groups.filter.pending' },
+  { key: 'downloading', labelKey: 'groups.filter.downloading' },
+  { key: 'completed', labelKey: 'groups.filter.completed' },
+  { key: 'failed', labelKey: 'groups.filter.failed' },
+  { key: 'in_r2', labelKey: 'groups.filter.inR2' },
+  { key: 'not_in_r2', labelKey: 'groups.filter.notInR2' },
 ];
 
 function matchesFilter(ep: Episode, filter: EpisodeFilter): boolean {
@@ -66,6 +69,7 @@ interface ForwardRequest {
 }
 
 export function GroupsPage() {
+  const { t } = useLanguage();
   const [groups, setGroups] = useState<Group[]>([]);
   const [topics, setTopics] = useState<Topic[]>([]);
   const [episodes, setEpisodes] = useState<Episode[]>([]);
@@ -188,9 +192,9 @@ export function GroupsPage() {
     setError('');
     try {
       await callBackend(`/api/telegram/groups/${groupId}/scan`);
-      setToast('Scan finished — topics and videos are up to date.');
+      setToast(t('groups.scanFinished'));
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Scan failed.');
+      setError(err instanceof Error ? err.message : t('groups.scanFailed'));
     }
     setScanning(false);
     loadData();
@@ -199,7 +203,7 @@ export function GroupsPage() {
   const handleAddGroup = async (data: NewGroupInput) => {
     const { data: newGroup, error: insertError } = await supabase.from('groups').insert(data).select().single();
     if (insertError || !newGroup) {
-      setError(insertError?.message || 'Could not add this group.');
+      setError(insertError?.message || t('groups.errAddGroup'));
       return;
     }
     setShowAddModal(false);
@@ -220,9 +224,7 @@ export function GroupsPage() {
   };
 
   const handleDeleteGroup = async (id: string, title: string) => {
-    const confirmed = window.confirm(
-      `Remove "${title}"? This deletes the group and its scanned topics/episodes from this app (it does not affect the Telegram group itself).`
-    );
+    const confirmed = window.confirm(t('groups.confirmDelete').replace('{title}', title));
     if (!confirmed) return;
     await supabase.from('groups').delete().eq('id', id);
     if (selectedGroupId === id) backToGroups();
@@ -232,7 +234,7 @@ export function GroupsPage() {
   const queueDownloads = async (eps: Episode[]) => {
     const pending = eps.filter((e) => e.status !== 'completed' && e.status !== 'downloading');
     if (pending.length === 0) {
-      setToast('Those videos are already downloaded or in progress.');
+      setToast(t('groups.alreadyDownloaded'));
       return;
     }
     const { error: dlError } = await supabase.from('downloads').insert(
@@ -244,7 +246,7 @@ export function GroupsPage() {
     }
     await supabase.from('episodes').update({ status: 'queued' }).in('id', pending.map((e) => e.id));
     setSelectedEpisodes(new Set());
-    setToast(`Queued ${pending.length} video${pending.length === 1 ? '' : 's'} for download.`);
+    setToast((pending.length === 1 ? t('groups.queuedOne') : t('groups.queuedMany')).replace('{n}', String(pending.length)));
     loadData();
   };
 
@@ -301,7 +303,7 @@ export function GroupsPage() {
       <Breadcrumb
         group={selectedGroup}
         topicLabel={
-          selectedTopicId === NO_TOPIC ? 'Videos without a topic' : selectedTopic?.title ?? null
+          selectedTopicId === NO_TOPIC ? t('groups.videosWithoutTopic') : selectedTopic?.title ?? null
         }
         onHome={backToGroups}
         onGroup={() => { setSelectedTopicId(null); resetEpisodeFilters(); }}
@@ -425,10 +427,11 @@ function Breadcrumb({ group, topicLabel, onHome, onGroup }: {
   onHome: () => void;
   onGroup: () => void;
 }) {
+  const { t } = useLanguage();
   return (
     <nav className="flex items-center gap-1.5 text-xs text-dark-500 flex-wrap">
       <button onClick={onHome} className={`flex items-center gap-1.5 px-2 py-1 rounded-md transition-colors ${group ? 'hover:bg-dark-800 hover:text-white' : 'text-white font-medium'}`}>
-        <Users className="w-3.5 h-3.5" /> Groups
+        <Users className="w-3.5 h-3.5" /> {t('groups.breadcrumbGroups')}
       </button>
       {group && (
         <>
@@ -448,7 +451,60 @@ function Breadcrumb({ group, topicLabel, onHome, onGroup }: {
   );
 }
 
+/**
+ * The R2 badge on an episode card: copy/open the public URL when there is
+ * one, and always a real Download link -- streamed through the backend with
+ * Content-Disposition: attachment, so it saves to the device even when the
+ * bucket has no public URL configured at all.
+ */
+function EpisodeUrlBadge({ url, r2Key, fileName }: { url: string | null; r2Key: string; fileName: string | null }) {
+  const { t } = useLanguage();
+  const [copied, setCopied] = useState(false);
+  return (
+    <span className="flex items-center gap-1">
+      {url && (
+        <>
+          <button
+            onClick={(e) => {
+              e.stopPropagation();
+              navigator.clipboard?.writeText(url);
+              setCopied(true);
+              setTimeout(() => setCopied(false), 1500);
+            }}
+            title={t('groups.copyUrl')}
+            className="flex items-center gap-1 rounded-full bg-success-500/10 px-1.5 py-0.5 font-medium text-success-400 transition-colors hover:bg-success-500/20"
+          >
+            {copied ? <Check className="h-2.5 w-2.5" /> : <Cloud className="h-2.5 w-2.5" />}
+            {copied ? t('groups.copied') : t('groups.copyUrl')}
+          </button>
+          <a
+            href={url}
+            target="_blank"
+            rel="noreferrer"
+            onClick={(e) => e.stopPropagation()}
+            title={t('groups.open')}
+            className="rounded-full bg-dark-800 px-1.5 py-0.5 text-dark-400 transition-colors hover:text-white"
+          >
+            <ExternalLink className="h-2.5 w-2.5" />
+          </a>
+        </>
+      )}
+      {backendConfigured && (
+        <a
+          href={r2DownloadUrl(r2Key, fileName ?? undefined)}
+          onClick={(e) => e.stopPropagation()}
+          title={t('groups.downloadToDevice')}
+          className="flex items-center gap-1 rounded-full bg-dark-800 px-1.5 py-0.5 text-dark-400 transition-colors hover:text-white"
+        >
+          <Download className="h-2.5 w-2.5" /> {t('groups.save')}
+        </a>
+      )}
+    </span>
+  );
+}
+
 function CopyableId({ value }: { value: string }) {
+  const { t } = useLanguage();
   const [copied, setCopied] = useState(false);
   return (
     <button
@@ -458,7 +514,7 @@ function CopyableId({ value }: { value: string }) {
         setCopied(true);
         setTimeout(() => setCopied(false), 1500);
       }}
-      title="Copy group ID"
+      title={t('groups.copyGroupId')}
       className="inline-flex items-center gap-1.5 rounded-md bg-dark-800/80 px-2 py-1 font-mono text-[10px] text-dark-400 transition-colors hover:bg-dark-700 hover:text-white"
     >
       {value}
@@ -484,31 +540,32 @@ function GroupGrid({ groups, topics, episodes, onOpen, onDelete, onAdd }: {
   onDelete: (id: string, title: string) => void;
   onAdd: () => void;
 }) {
+  const { t } = useLanguage();
   return (
     <div className="animate-slide-up">
       <div className="mb-3 flex items-center justify-between">
         <h2 className="flex items-center gap-2 text-sm font-semibold text-white">
-          <Users className="h-4 w-4 text-primary-400" /> Groups
+          <Users className="h-4 w-4 text-primary-400" /> {t('groups.groupsHeading')}
           <span className="text-xs font-normal text-dark-500">{groups.length}</span>
         </h2>
         <button
           onClick={onAdd}
           className="flex items-center gap-2 rounded-lg bg-primary-500 px-3 py-1.5 text-xs font-medium text-white transition-colors hover:bg-primary-600"
         >
-          <Plus className="h-4 w-4" /> Add Group
+          <Plus className="h-4 w-4" /> {t('groups.addGroup')}
         </button>
       </div>
 
       {groups.length === 0 ? (
         <div className="rounded-xl border border-dashed border-dark-700 bg-dark-900/40 p-12 text-center">
           <Users className="mx-auto mb-4 h-12 w-12 text-dark-700" />
-          <p className="text-sm text-dark-400">No groups added yet</p>
-          <p className="mb-4 mt-1 text-xs text-dark-600">Add a Telegram group to start scanning for videos</p>
+          <p className="text-sm text-dark-400">{t('groups.noGroupsYet')}</p>
+          <p className="mb-4 mt-1 text-xs text-dark-600">{t('groups.addGroupHint')}</p>
           <button
             onClick={onAdd}
             className="inline-flex items-center gap-2 rounded-lg bg-primary-500 px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-primary-600"
           >
-            <Plus className="h-4 w-4" /> Add Your First Group
+            <Plus className="h-4 w-4" /> {t('groups.addFirstGroup')}
           </button>
         </div>
       ) : (
@@ -535,11 +592,11 @@ function GroupGrid({ groups, topics, episodes, onOpen, onDelete, onAdd }: {
                         <span className="shrink-0 rounded bg-accent-500/10 px-1.5 py-0.5 text-[9px] font-medium text-accent-400">FORUM</span>
                       )}
                     </div>
-                    <p className="truncate text-xs text-dark-500">{group.username ? '@' + group.username : 'private group'}</p>
+                    <p className="truncate text-xs text-dark-500">{group.username ? '@' + group.username : t('groups.privateGroup')}</p>
                   </div>
                   <span
                     onClick={(e) => { e.stopPropagation(); onDelete(group.id, group.title); }}
-                    title="Remove group"
+                    title={t('groups.removeGroup')}
                     className="rounded p-1 text-dark-600 transition-colors hover:bg-error-500/20 hover:text-error-400"
                   >
                     <Trash2 className="h-3.5 w-3.5" />
@@ -549,16 +606,16 @@ function GroupGrid({ groups, topics, episodes, onOpen, onDelete, onAdd }: {
                 <div className="mb-3"><CopyableId value={group.chat_id} /></div>
 
                 <div className="mb-2 grid grid-cols-3 gap-2 text-center">
-                  <Stat icon={<MessagesSquare className="h-3 w-3" />} label="Topics" value={group.is_forum ? topicCount : '—'} />
-                  <Stat icon={<Film className="h-3 w-3" />} label="Videos" value={groupEpisodes.length} />
-                  <Stat icon={<HardDrive className="h-3 w-3" />} label="Size" value={formatBytes(size)} />
+                  <Stat icon={<MessagesSquare className="h-3 w-3" />} label={t('groups.statTopics')} value={group.is_forum ? topicCount : '—'} />
+                  <Stat icon={<Film className="h-3 w-3" />} label={t('groups.statVideos')} value={groupEpisodes.length} />
+                  <Stat icon={<HardDrive className="h-3 w-3" />} label={t('groups.statSize')} value={formatBytes(size)} />
                 </div>
 
                 <ProgressBar done={done} total={groupEpisodes.length} />
                 <div className="mt-2 flex items-center justify-between text-[10px] text-dark-500">
-                  <span>{done}/{groupEpisodes.length} downloaded</span>
+                  <span>{t('groups.downloadedOfTotal').replace('{done}', String(done)).replace('{total}', String(groupEpisodes.length))}</span>
                   <span className="flex items-center gap-1">
-                    Last scan {formatTimeAgo(group.last_scanned_at)}
+                    {t('groups.lastScan').replace('{time}', formatTimeAgo(group.last_scanned_at))}
                     <ChevronRight className="h-3 w-3 transition-transform group-hover:translate-x-0.5" />
                   </span>
                 </div>
@@ -592,6 +649,7 @@ function GroupDetail({ group, topics, episodesOf, scanning, onScan, onBack, onOp
   onDownloadTopic: (episodes: Episode[]) => void;
   onForwardTopic: (topic: Topic | null, episodes: Episode[]) => void;
 }) {
+  const { t } = useLanguage();
   const allEpisodes = episodesOf(group.id, null);
   const untopicked = episodesOf(group.id, NO_TOPIC);
   const totalSize = allEpisodes.reduce((sum, e) => sum + (e.file_size || 0), 0);
@@ -604,7 +662,7 @@ function GroupDetail({ group, topics, episodesOf, scanning, onScan, onBack, onOp
         <div className="absolute right-0 top-0 h-56 w-56 -translate-y-1/2 translate-x-1/2 rounded-full bg-primary-500/10 blur-3xl" />
         <div className="relative">
           <button onClick={onBack} className="mb-3 inline-flex items-center gap-1.5 rounded-lg px-2 py-1 text-xs text-dark-400 transition-colors hover:bg-dark-800 hover:text-white">
-            <ChevronLeft className="h-3.5 w-3.5" /> All groups
+            <ChevronLeft className="h-3.5 w-3.5" /> {t('groups.allGroups')}
           </button>
           <div className="flex flex-wrap items-center gap-4">
             <div className="flex h-14 w-14 shrink-0 items-center justify-center rounded-2xl bg-gradient-to-br from-primary-500/30 to-accent-500/30 glow">
@@ -614,13 +672,13 @@ function GroupDetail({ group, topics, episodesOf, scanning, onScan, onBack, onOp
               <div className="flex items-center gap-2">
                 <h2 className="truncate text-lg font-bold text-white">{group.title}</h2>
                 {group.is_forum && (
-                  <span className="rounded bg-accent-500/10 px-1.5 py-0.5 text-[9px] font-medium text-accent-400">FORUM</span>
+                  <span className="rounded bg-accent-500/10 px-1.5 py-0.5 text-[9px] font-medium text-accent-400">{t('groups.forum')}</span>
                 )}
               </div>
               <div className="mt-1.5 flex flex-wrap items-center gap-2">
                 <CopyableId value={group.chat_id} />
                 {group.username && <span className="text-xs text-accent-400">@{group.username}</span>}
-                <span className="text-[10px] text-dark-500">Last scan {formatTimeAgo(group.last_scanned_at)}</span>
+                <span className="text-[10px] text-dark-500">{t('groups.lastScan').replace('{time}', formatTimeAgo(group.last_scanned_at))}</span>
               </div>
             </div>
             <div className="flex flex-wrap items-center gap-2">
@@ -629,24 +687,24 @@ function GroupDetail({ group, topics, episodesOf, scanning, onScan, onBack, onOp
                 disabled={scanning}
                 className="flex items-center gap-2 rounded-lg bg-primary-500 px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-primary-600 disabled:opacity-50"
               >
-                {scanning ? <Loader2 className="h-4 w-4 animate-spin" /> : <RefreshCw className="h-4 w-4" />} Scan group
+                {scanning ? <Loader2 className="h-4 w-4 animate-spin" /> : <RefreshCw className="h-4 w-4" />} {t('groups.scanGroup')}
               </button>
               <button
                 onClick={onMirror}
                 disabled={allEpisodes.length === 0}
-                title="Copy every topic and video into a new group"
+                title={t('groups.mirrorTitle')}
                 className="flex items-center gap-2 rounded-lg bg-dark-800 px-4 py-2 text-sm font-medium text-dark-300 transition-colors hover:bg-accent-500 hover:text-white disabled:opacity-40"
               >
-                <CopyIcon className="h-4 w-4" /> Mirror to new group
+                <CopyIcon className="h-4 w-4" /> {t('groups.mirrorToNewGroup')}
               </button>
             </div>
           </div>
 
           <div className="mt-4 grid grid-cols-2 gap-3 sm:grid-cols-4">
-            <Stat icon={<MessagesSquare className="h-3 w-3" />} label="Topics" value={group.is_forum ? topics.length : '—'} />
-            <Stat icon={<Film className="h-3 w-3" />} label="Videos" value={allEpisodes.length} />
-            <Stat icon={<Download className="h-3 w-3" />} label="Downloaded" value={`${done}/${allEpisodes.length}`} />
-            <Stat icon={<HardDrive className="h-3 w-3" />} label="Total size" value={formatBytes(totalSize)} />
+            <Stat icon={<MessagesSquare className="h-3 w-3" />} label={t('groups.statTopics')} value={group.is_forum ? topics.length : '—'} />
+            <Stat icon={<Film className="h-3 w-3" />} label={t('groups.statVideos')} value={allEpisodes.length} />
+            <Stat icon={<Download className="h-3 w-3" />} label={t('groups.statDownloaded')} value={`${done}/${allEpisodes.length}`} />
+            <Stat icon={<HardDrive className="h-3 w-3" />} label={t('groups.statTotalSize')} value={formatBytes(totalSize)} />
           </div>
         </div>
       </div>
@@ -654,7 +712,7 @@ function GroupDetail({ group, topics, episodesOf, scanning, onScan, onBack, onOp
       {/* Topic list */}
       <div>
         <h3 className="mb-3 flex items-center gap-2 text-sm font-semibold text-white">
-          <Layers className="h-4 w-4 text-accent-400" /> Topics in this group
+          <Layers className="h-4 w-4 text-accent-400" /> {t('groups.topicsInGroup')}
           <span className="text-xs font-normal text-dark-500">{topics.length}</span>
         </h3>
 
@@ -662,9 +720,9 @@ function GroupDetail({ group, topics, episodesOf, scanning, onScan, onBack, onOp
           <div className="rounded-xl border border-dashed border-dark-700 bg-dark-900/40 p-10 text-center">
             <MessagesSquare className="mx-auto mb-3 h-10 w-10 text-dark-700" />
             <p className="text-sm text-dark-400">
-              {group.is_forum ? 'No topics found yet' : 'This group is not a forum, so it has no topics'}
+              {group.is_forum ? t('groups.noTopicsYet') : t('groups.notAForum')}
             </p>
-            <p className="mt-1 text-xs text-dark-600">Run a scan to pull the topics and videos from Telegram</p>
+            <p className="mt-1 text-xs text-dark-600">{t('groups.runScanHint')}</p>
           </div>
         ) : (
           <div className="grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-3">
@@ -683,7 +741,7 @@ function GroupDetail({ group, topics, episodesOf, scanning, onScan, onBack, onOp
             })}
             {untopicked.length > 0 && (
               <TopicCard
-                title="Videos without a topic"
+                title={t('groups.videosWithoutTopic')}
                 episodes={untopicked}
                 muted
                 onOpen={() => onOpenTopic(NO_TOPIC)}
@@ -706,6 +764,7 @@ function TopicCard({ title, episodes, muted, onOpen, onDownload, onForward }: {
   onDownload: () => void;
   onForward: () => void;
 }) {
+  const { t } = useLanguage();
   const done = episodes.filter((e) => e.status === 'completed').length;
   const inR2 = episodes.filter((e) => e.r2_key).length;
   const size = episodes.reduce((sum, e) => sum + (e.file_size || 0), 0);
@@ -720,7 +779,9 @@ function TopicCard({ title, episodes, muted, onOpen, onDownload, onForward }: {
           <div className="min-w-0 flex-1">
             <p className="truncate text-sm font-semibold text-white">{title}</p>
             <p className="mt-0.5 text-[11px] text-dark-500">
-              <span className="font-semibold text-primary-400">{episodes.length}</span> video{episodes.length === 1 ? '' : 's'} · {formatBytes(size)}
+              <span className="font-semibold text-primary-400">
+                {(episodes.length === 1 ? t('groups.videoCountOne') : t('groups.videoCountMany')).replace('{n}', String(episodes.length))}
+              </span> · {formatBytes(size)}
             </p>
           </div>
           <ChevronRight className="h-4 w-4 shrink-0 text-dark-600 transition-transform group-hover:translate-x-0.5 group-hover:text-white" />
@@ -728,9 +789,9 @@ function TopicCard({ title, episodes, muted, onOpen, onDownload, onForward }: {
 
         <div className="mt-3"><ProgressBar done={done} total={episodes.length} /></div>
         <div className="mt-1.5 flex items-center justify-between text-[10px] text-dark-500">
-          <span>{done}/{episodes.length} downloaded</span>
+          <span>{t('groups.downloadedOfTotal').replace('{done}', String(done)).replace('{total}', String(episodes.length))}</span>
           {inR2 > 0 && (
-            <span className="flex items-center gap-1 text-success-400"><Cloud className="h-3 w-3" /> {inR2} in R2</span>
+            <span className="flex items-center gap-1 text-success-400"><Cloud className="h-3 w-3" /> {t('groups.inR2Count').replace('{n}', String(inR2))}</span>
           )}
         </div>
       </button>
@@ -741,14 +802,14 @@ function TopicCard({ title, episodes, muted, onOpen, onDownload, onForward }: {
           disabled={episodes.length === 0}
           className="flex flex-1 items-center justify-center gap-1.5 rounded-lg bg-dark-800 px-2 py-1.5 text-[11px] font-medium text-dark-300 transition-colors hover:bg-primary-500 hover:text-white disabled:opacity-40"
         >
-          <Download className="h-3.5 w-3.5" /> Download all
+          <Download className="h-3.5 w-3.5" /> {t('groups.downloadAll')}
         </button>
         <button
           onClick={onForward}
           disabled={episodes.length === 0}
           className="flex flex-1 items-center justify-center gap-1.5 rounded-lg bg-dark-800 px-2 py-1.5 text-[11px] font-medium text-dark-300 transition-colors hover:bg-accent-500 hover:text-white disabled:opacity-40"
         >
-          <Send className="h-3.5 w-3.5" /> Forward all
+          <Send className="h-3.5 w-3.5" /> {t('groups.forwardAll')}
         </button>
       </div>
     </div>
@@ -790,7 +851,8 @@ function EpisodeBrowser({
   statusFilter, onStatusFilter, search, onSearch, epFrom, epTo, onEpFrom, onEpTo,
   scanning, r2Connected, onScan, onBack, onQueue, onForward,
 }: EpisodeBrowserProps) {
-  const title = isNoTopicBucket ? 'Videos without a topic' : topic?.title ?? group.title;
+  const { t } = useLanguage();
+  const title = isNoTopicBucket ? t('groups.videosWithoutTopic') : topic?.title ?? group.title;
   const selectedSize = episodes.filter((e) => selected.has(e.id)).reduce((sum, e) => sum + (e.file_size || 0), 0);
 
   return (
@@ -807,11 +869,13 @@ function EpisodeBrowser({
           <div className="min-w-0 flex-1">
             <h2 className="truncate text-lg font-bold text-white">{title}</h2>
             <p className="text-xs text-dark-500">
-              <span className="font-semibold text-primary-400">{totalInTopic}</span> video{totalInTopic === 1 ? '' : 's'} in this topic
+              <span className="font-semibold text-primary-400">
+                {(totalInTopic === 1 ? t('groups.videoInTopicOne') : t('groups.videoInTopicMany')).replace('{n}', String(totalInTopic))}
+              </span>
               {r2Connected ? (
-                <span className="ml-2 inline-flex items-center gap-1 text-success-400"><Cloud className="h-3 w-3" /> R2 connected</span>
+                <span className="ml-2 inline-flex items-center gap-1 text-success-400"><Cloud className="h-3 w-3" /> {t('groups.r2Connected')}</span>
               ) : (
-                <span className="ml-2 text-dark-600">R2 not connected</span>
+                <span className="ml-2 text-dark-600">{t('groups.r2NotConnected')}</span>
               )}
             </p>
           </div>
@@ -820,7 +884,7 @@ function EpisodeBrowser({
             disabled={scanning}
             className="flex items-center gap-2 rounded-lg bg-dark-800 px-3 py-2 text-xs font-medium text-dark-300 transition-colors hover:bg-dark-700 disabled:opacity-50"
           >
-            {scanning ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <RefreshCw className="h-3.5 w-3.5" />} Rescan
+            {scanning ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <RefreshCw className="h-3.5 w-3.5" />} {t('groups.rescan')}
           </button>
         </div>
       </div>
@@ -832,7 +896,7 @@ function EpisodeBrowser({
           <input
             value={search}
             onChange={(e) => onSearch(e.target.value)}
-            placeholder="Search videos..."
+            placeholder={t('groups.searchVideos')}
             className="w-40 bg-transparent text-xs text-white placeholder-dark-500 outline-none"
           />
         </div>
@@ -841,7 +905,7 @@ function EpisodeBrowser({
           <input
             value={epFrom}
             onChange={(e) => onEpFrom(e.target.value.replace(/\D/g, ''))}
-            placeholder="from"
+            placeholder={t('groups.epFrom')}
             inputMode="numeric"
             className="w-12 bg-transparent text-xs text-white placeholder-dark-600 outline-none"
           />
@@ -849,7 +913,7 @@ function EpisodeBrowser({
           <input
             value={epTo}
             onChange={(e) => onEpTo(e.target.value.replace(/\D/g, ''))}
-            placeholder="to"
+            placeholder={t('groups.epTo')}
             inputMode="numeric"
             className="w-12 bg-transparent text-xs text-white placeholder-dark-600 outline-none"
           />
@@ -859,32 +923,32 @@ function EpisodeBrowser({
           disabled={episodes.length === 0}
           className="rounded-lg bg-dark-800 px-3 py-1.5 text-[11px] font-medium text-dark-300 transition-colors hover:bg-dark-700 disabled:opacity-40"
         >
-          {allVisibleSelected ? 'Deselect all' : `Select all (${episodes.length})`}
+          {allVisibleSelected ? t('groups.deselectAll') : t('groups.selectAll').replace('{n}', String(episodes.length))}
         </button>
         <button
           onClick={onSelectNotDownloaded}
           disabled={episodes.length === 0}
-          title="Tick every video here that has not been downloaded yet"
+          title={t('groups.selectNotDownloadedTitle')}
           className="rounded-lg bg-dark-800 px-3 py-1.5 text-[11px] font-medium text-dark-300 transition-colors hover:bg-dark-700 disabled:opacity-40"
         >
-          Select not downloaded
+          {t('groups.selectNotDownloaded')}
         </button>
         <button
           onClick={onSelectNotInR2}
           disabled={episodes.length === 0}
-          title="Tick every video here that is not in the bucket yet"
+          title={t('groups.selectNotInR2Title')}
           className="rounded-lg bg-dark-800 px-3 py-1.5 text-[11px] font-medium text-dark-300 transition-colors hover:bg-dark-700 disabled:opacity-40"
         >
-          Select not in R2
+          {t('groups.selectNotInR2')}
         </button>
         <span className="ml-auto text-[11px] text-dark-500">
-          {episodes.length} shown · <span className="text-dark-600">Shift+click for a range</span>
+          {t('groups.shownCount').replace('{n}', String(episodes.length))}
         </span>
       </div>
 
       {/* Status filter */}
       <div className="flex flex-wrap items-center gap-1.5">
-        {EPISODE_FILTERS.map((filter) => {
+        {EPISODE_FILTER_KEYS.map((filter) => {
           const active = statusFilter === filter.key;
           return (
             <button
@@ -896,7 +960,7 @@ function EpisodeBrowser({
                   : 'bg-dark-900/60 text-dark-400 hover:bg-dark-800 hover:text-white'
               }`}
             >
-              {filter.label}
+              {t(filter.labelKey)}
             </button>
           );
         })}
@@ -906,26 +970,26 @@ function EpisodeBrowser({
       {selected.size > 0 && (
         <div className="sticky top-0 z-10 flex flex-wrap items-center justify-between gap-2 rounded-xl border border-primary-500/30 bg-primary-500/10 px-4 py-3 animate-slide-right">
           <span className="text-xs font-medium text-primary-200">
-            {selected.size} selected · {formatBytes(selectedSize)}
+            {t('groups.selectedCount').replace('{n}', String(selected.size)).replace('{size}', formatBytes(selectedSize))}
           </span>
           <div className="flex items-center gap-2">
             <button
               onClick={onClearSelection}
               className="flex items-center gap-1.5 rounded-lg bg-dark-800/70 px-3 py-1.5 text-xs font-medium text-dark-300 transition-colors hover:bg-dark-700 hover:text-white"
             >
-              <X className="h-3.5 w-3.5" /> Clear
+              <X className="h-3.5 w-3.5" /> {t('groups.clear')}
             </button>
             <button
               onClick={onQueue}
               className="flex items-center gap-1.5 rounded-lg bg-primary-500 px-3 py-1.5 text-xs font-medium text-white transition-colors hover:bg-primary-600"
             >
-              <Download className="h-3.5 w-3.5" /> Download selected
+              <Download className="h-3.5 w-3.5" /> {t('groups.downloadSelected')}
             </button>
             <button
               onClick={onForward}
               className="flex items-center gap-1.5 rounded-lg bg-accent-500 px-3 py-1.5 text-xs font-medium text-white transition-colors hover:bg-accent-600"
             >
-              <Send className="h-3.5 w-3.5" /> Forward to group
+              <Send className="h-3.5 w-3.5" /> {t('groups.forwardToGroup')}
             </button>
           </div>
         </div>
@@ -935,8 +999,8 @@ function EpisodeBrowser({
       {episodes.length === 0 ? (
         <div className="rounded-xl border border-dashed border-dark-700 bg-dark-900/40 py-14 text-center">
           <Film className="mx-auto mb-3 h-10 w-10 text-dark-700" />
-          <p className="text-sm text-dark-500">No videos match this view</p>
-          <p className="mt-1 text-xs text-dark-600">Clear the filters, or run a rescan to detect new videos</p>
+          <p className="text-sm text-dark-500">{t('groups.noVideosMatch')}</p>
+          <p className="mt-1 text-xs text-dark-600">{t('groups.clearFiltersHint')}</p>
         </div>
       ) : (
         <div className="grid grid-cols-1 gap-2 lg:grid-cols-2">
@@ -961,6 +1025,8 @@ function EpisodeBrowser({
                 <div className="flex h-12 w-16 shrink-0 items-center justify-center overflow-hidden rounded-lg bg-dark-800/60">
                   {ep.thumbnail_url ? (
                     <img src={ep.thumbnail_url} alt="" className="h-full w-full object-cover" />
+                  ) : ep.media_type === 'audio' ? (
+                    <Music className="h-5 w-5 text-dark-500" />
                   ) : (
                     <Film className="h-5 w-5 text-dark-500" />
                   )}
@@ -970,16 +1036,14 @@ function EpisodeBrowser({
                     {ep.ep_number !== null && (
                       <span className="shrink-0 text-xs font-bold text-primary-400 tabular-nums">EP{String(ep.ep_number).padStart(3, '0')}</span>
                     )}
-                    <p className="truncate text-sm font-medium text-white">{ep.title || ep.file_name || 'Untitled'}</p>
+                    <p className="truncate text-sm font-medium text-white">{ep.title || ep.file_name || t('groups.untitled')}</p>
                   </div>
                   <div className="mt-1 flex flex-wrap items-center gap-2 text-[10px] text-dark-500">
                     <span>{formatBytes(ep.file_size)}</span>
                     {ep.duration > 0 && <span>{Math.floor(ep.duration / 60)}m</span>}
-                    <span className={`rounded-full px-1.5 py-0.5 font-medium ${getStatusColor(ep.status)}`}>{ep.status}</span>
+                    <span className={`rounded-full px-1.5 py-0.5 font-medium ${getStatusColor(ep.status)}`}>{t(`groups.status.${ep.status}` as TranslationKey)}</span>
                     {ep.r2_key && (
-                      <span className="flex items-center gap-1 rounded-full bg-success-500/10 px-1.5 py-0.5 font-medium text-success-400">
-                        <Cloud className="h-2.5 w-2.5" /> in R2
-                      </span>
+                      <EpisodeUrlBadge url={ep.r2_url} r2Key={ep.r2_key} fileName={ep.file_name} />
                     )}
                   </div>
                 </div>
