@@ -22,6 +22,33 @@ import {
 } from '@/lib/backend';
 import type { PaymentSubmission, PricingTier } from '@/lib/types';
 
+const FALLBACK_TIERS: PricingTier[] = [
+  {
+    key: 'basic_1m',
+    capability: 'basic',
+    price: 5,
+    months: 1,
+    monthly_quota: 30,
+    label_km: 'មូលដ្ឋាន',
+    label_en: 'Basic',
+    pitch_km: 'ប្រើ userbot របស់ app ផ្ទាល់ — មិនចាំបាច់ភ្ជាប់គណនី Telegram ខ្លួនឯង',
+    pitch_en: "Use the app's shared userbot — no Telegram account of your own to connect",
+    active: true,
+  },
+  {
+    key: 'pro_1m',
+    capability: 'pro',
+    price: 9,
+    months: 1,
+    monthly_quota: null,
+    label_km: 'Pro',
+    label_en: 'Pro',
+    pitch_km: 'ភ្ជាប់គណនី Telegram ខ្លួនឯង + storage ខ្លួនឯង',
+    pitch_en: 'Connect your own Telegram account and storage for private groups',
+    active: true,
+  },
+];
+
 /**
  * Shown instead of the app shell whenever the signed-in account has no
  * active subscription. Picks a plan, shows the QR + lets a screenshot be
@@ -41,7 +68,7 @@ export function SubscribePage({ onApproved }: { onApproved: () => void }) {
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   const load = async () => {
-    const [{ data: tierRows }, { data: submissionRows }] = await Promise.all([
+    const [tierResult, submissionResult] = await Promise.all([
       supabase.from('pricing_tiers').select('*').eq('active', true).order('price', { ascending: true }),
       supabase
         .from('payment_submissions')
@@ -50,8 +77,11 @@ export function SubscribePage({ onApproved }: { onApproved: () => void }) {
         .order('submitted_at', { ascending: false })
         .limit(1),
     ]);
-    setTiers((tierRows as PricingTier[]) || []);
-    const current = (submissionRows as PaymentSubmission[] | null)?.[0] ?? null;
+    if (tierResult.error || submissionResult.error) {
+      setError(tierResult.error?.message || submissionResult.error?.message || t('subscribe.selectFailed'));
+    }
+    setTiers((tierResult.data as PricingTier[])?.length ? (tierResult.data as PricingTier[]) : FALLBACK_TIERS);
+    const current = (submissionResult.data as PaymentSubmission[] | null)?.[0] ?? null;
     setPending(current);
     if (current) {
       const { data: qr } = await supabase
