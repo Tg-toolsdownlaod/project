@@ -29,9 +29,9 @@ const app = express();
 app.use(express.json());
 app.use(
   cors({
-    origin: config.corsOrigins.includes("*") ? true : config.corsOrigins,
+    origin: true,
     methods: ["GET", "POST", "OPTIONS"],
-    allowedHeaders: ["Content-Type", "x-api-key"],
+    allowedHeaders: ["Content-Type", "Authorization", "x-api-key"],
   })
 );
 
